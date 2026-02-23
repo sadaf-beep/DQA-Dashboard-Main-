@@ -1,0 +1,5 @@
+{
+  "name": "DQA Task Management",
+  "description": "A comprehensive task management and inventory tracking dashboard for Data Quality teams, featuring role-based access control and AI-powered inventory insights.",
+  "requestFramePermissions": []
+}
