@@ -176,16 +176,21 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ inventories, curren
       reader.onload = (event) => {
         try {
           const text = event.target?.result as string;
-          const lines = text.split('\n');
+          const lines = text.split(/\r?\n/);
           if (lines.length < 2) throw new Error("File is empty");
           
+          const firstLine = lines[0];
+          let delimiter = ',';
+          if (firstLine.includes('\t')) delimiter = '\t';
+          else if (firstLine.includes(';') && !firstLine.includes(',')) delimiter = ';';
+
           const parseLine = (line: string) => {
              const result = [];
              let start = 0;
              let inQuotes = false;
              for (let i = 0; i < line.length; i++) {
                  if (line[i] === '"') inQuotes = !inQuotes;
-                 if (line[i] === ',' && !inQuotes) {
+                 if (line[i] === delimiter && !inQuotes) {
                      result.push(line.substring(start, i).replace(/^"|"$/g, '').trim());
                      start = i + 1;
                  }
@@ -426,7 +431,19 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ inventories, curren
                             <td key={col.key} className="px-6 py-3" onClick={col.key === 'productId' ? e => e.stopPropagation() : undefined}>
                                 {col.key === 'productId' ? (
                                     <a 
-                                        href={`https://insights.beamdynamics.io/product/${item.productId}`} 
+                                        href={`https://insights.beamdynamics.io/product/${encodeURIComponent(
+                                            (() => {
+                                                let id = item.productId.trim();
+                                                if (id.includes('http')) {
+                                                    try {
+                                                        const url = new URL(id);
+                                                        const parts = url.pathname.split('/').filter(Boolean);
+                                                        id = parts[parts.length - 1];
+                                                    } catch (e) {}
+                                                }
+                                                return id.split(/[\s\t,;]+/)[0];
+                                            })()
+                                        )}`} 
                                         target="_blank" 
                                         rel="noopener noreferrer"
                                         className="font-medium text-blue-600 hover:underline flex items-center gap-1"
