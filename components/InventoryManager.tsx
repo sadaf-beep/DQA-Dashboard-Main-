@@ -15,10 +15,6 @@ interface InventoryManagerProps {
 
 const COLUMNS = [
     { key: 'productId', label: 'Product ID', width: 'min-w-[150px]' },
-    { key: 'mfr', label: 'MFR', width: 'min-w-[120px]' },
-    { key: 'model', label: 'Model', width: 'min-w-[120px]' },
-    { key: 'productName', label: 'Name', width: 'min-w-[200px]' },
-    { key: 'studio', label: 'Studio', width: 'min-w-[120px]' },
     { key: 'csvStatus', label: 'Status', width: 'min-w-[120px]' },
     { key: 'status', label: 'Workflow', width: 'min-w-[140px]' },
     { key: 'assigneeName', label: 'Assignee', width: 'min-w-[140px]' },
@@ -312,6 +308,20 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ inventories, curren
     setIsAssignModalOpen(true);
   };
 
+  const getRowClass = (item: InventoryItem, isSelected: boolean) => {
+    if (isSelected) return 'bg-blue-100 ring-1 ring-blue-400';
+    switch (item.status) {
+      case InventoryStatus.QA_COMPLETE: 
+        return 'bg-emerald-50 hover:bg-emerald-100';
+      case InventoryStatus.ASSIGNED_AUGMENTATION:
+      case InventoryStatus.ASSIGNED_QA:
+      case InventoryStatus.AUGMENTED: 
+        return 'bg-slate-100 text-slate-500 hover:bg-slate-200 opacity-80';
+      default: 
+        return 'hover:bg-slate-50';
+    }
+  };
+
   return (
     <div className="h-full flex flex-col gap-4 relative">
       {/* Loading Overlay */}
@@ -413,7 +423,7 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ inventories, curren
                   {filteredData.map((item) => (
                     <tr 
                       key={item.id} 
-                      className={`border-b border-slate-100 hover:bg-slate-50 cursor-pointer select-none ${selectedIds.has(item.id) ? 'bg-blue-50' : ''}`}
+                      className={`border-b border-slate-100 cursor-pointer select-none transition-colors ${getRowClass(item, selectedIds.has(item.id))}`}
                       onClick={(e) => toggleSelect(item.id, e.shiftKey)}
                     >
                        <td className="p-4" onClick={e => e.stopPropagation()}>
