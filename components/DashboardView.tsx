@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { Task, User, InventoryFile, InventoryStatus, TaskStatus, Escalation, UserRole } from '../types';
+import { Task, User, InventoryFile, InventoryStatus, TaskStatus, Escalation, UserRole, Notification } from '../types';
 import DashboardTracker from './DashboardTracker';
 import { EscalationModal } from './EscalationModal';
 
@@ -10,12 +10,14 @@ interface DashboardViewProps {
   currentUser: User;
   inventories: InventoryFile[];
   escalations: Escalation[];
+  notifications: Notification[];
+  onDismissNotification: (id: string) => void;
   onUpdateTask: (task: Task) => void;
   onResolveEscalation: (escalation: Escalation, message: string) => void;
   onCloseEscalation: (escalation: Escalation) => void;
 }
 
-const DashboardView: React.FC<DashboardViewProps> = ({ tasks, users, currentUser, inventories, escalations, onUpdateTask, onResolveEscalation, onCloseEscalation }) => {
+const DashboardView: React.FC<DashboardViewProps> = ({ tasks, users, currentUser, inventories, escalations, notifications, onDismissNotification, onUpdateTask, onResolveEscalation, onCloseEscalation }) => {
   const [activeEscalation, setActiveEscalation] = useState<Escalation | null>(null);
 
   // Sync the currently open escalation modal with updates from the parent prop
@@ -93,6 +95,29 @@ const DashboardView: React.FC<DashboardViewProps> = ({ tasks, users, currentUser
             <p className="text-sm text-slate-500">Overview of team performance and task status.</p>
           </div>
        </div>
+
+       {currentUser.role === UserRole.AGENT && notifications.length > 0 && (
+         <div className="bg-white rounded-xl shadow-sm border border-blue-100 p-4 mb-4">
+            <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
+               <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+               New Notifications
+            </h3>
+            <div className="space-y-2">
+               {notifications.map(notif => (
+                  <div key={notif.id} className="flex items-start justify-between p-3 bg-blue-50/50 rounded-lg border border-blue-100">
+                     <div>
+                        <p className="text-sm font-bold text-slate-800">{notif.title}</p>
+                        <p className="text-xs text-slate-600 mt-0.5">{notif.message}</p>
+                        <p className="text-[10px] text-slate-400 mt-1">{new Date(notif.timestamp).toLocaleTimeString()}</p>
+                     </div>
+                     <button onClick={() => onDismissNotification(notif.id)} className="text-slate-400 hover:text-slate-600 p-1">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                     </button>
+                  </div>
+               ))}
+            </div>
+         </div>
+       )}
 
        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">

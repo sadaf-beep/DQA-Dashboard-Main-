@@ -65,7 +65,24 @@ const App: React.FC = () => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [escalations, setEscalations] = useState<Escalation[]>([]); 
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>(() => {
+    const saved = localStorage.getItem('dqa_notifications');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        const now = new Date();
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        return parsed.filter((n: Notification) => n.timestamp >= startOfDay);
+      } catch (e) {
+        return [];
+      }
+    }
+    return [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('dqa_notifications', JSON.stringify(notifications));
+  }, [notifications]);
 
   // Refs for change detection (Notification Logic)
   const prevTasksRef = useRef<Task[]>([]);
@@ -487,7 +504,7 @@ const App: React.FC = () => {
       />
       <main className="flex-1 ml-64 p-8 h-screen overflow-hidden flex flex-col">
         <div className="flex-1 overflow-auto w-full pb-8">
-          {activeTab === 'dashboard' && <DashboardView tasks={tasks} users={users} currentUser={currentUser} inventories={inventories} escalations={escalations} onUpdateTask={handleTaskUpdate} onResolveEscalation={handleEscalationReply} onCloseEscalation={handleCloseEscalation} />}
+          {activeTab === 'dashboard' && <DashboardView tasks={tasks} users={users} currentUser={currentUser} inventories={inventories} escalations={escalations} notifications={notifications} onDismissNotification={dismissNotification} onUpdateTask={handleTaskUpdate} onResolveEscalation={handleEscalationReply} onCloseEscalation={handleCloseEscalation} />}
           {activeTab === 'tasks' && <TaskBoard tasks={tasks} users={users} currentUser={currentUser} onAddTask={handleAddTask} onUpdateTask={handleTaskUpdate} onDeleteTask={handleDeleteTask} onEscalateTask={handleEscalateTask} escalations={escalations} onResolveEscalation={handleEscalationReply} onCloseEscalation={handleCloseEscalation} />}
           {activeTab === 'inventory' && <InventoryManager inventories={inventories} currentUser={currentUser} users={users} onUpload={handleInventoryUpload} onDeleteFile={handleInventoryDelete} onUpdateItems={handleInventoryItemsUpdate} onAddTask={handleAddTask} />}
           {activeTab === 'analytics' && currentUser.role === UserRole.MANAGER && <OperationalAnalytics tasks={tasks} inventories={inventories} invoices={invoices} users={users} />}
