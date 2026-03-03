@@ -8,12 +8,9 @@ interface NotificationToastProps {
 }
 
 const NotificationToast: React.FC<NotificationToastProps> = ({ notifications, onDismiss }) => {
-  // Only show the latest 5 notifications to avoid clutter
-  const activeNotifications = notifications.slice(0, 5);
-
   return (
-    <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
-      {activeNotifications.map((notif) => (
+    <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none max-h-screen overflow-y-auto p-4">
+      {notifications.map((notif) => (
         <ToastItem key={notif.id} notification={notif} onDismiss={onDismiss} />
       ))}
     </div>
@@ -21,13 +18,6 @@ const NotificationToast: React.FC<NotificationToastProps> = ({ notifications, on
 };
 
 const ToastItem: React.FC<{ notification: Notification; onDismiss: (id: string) => void }> = ({ notification, onDismiss }) => {
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      onDismiss(notification.id);
-    }, 5000); // Auto dismiss after 5 seconds
-    return () => clearTimeout(timer);
-  }, [notification.id, onDismiss]);
-
   return (
     <div className="bg-white border border-slate-200 shadow-xl rounded-lg p-4 w-80 pointer-events-auto transform transition-all duration-300 animate-slideIn flex items-start gap-3">
        <div className="flex-shrink-0 mt-0.5">
