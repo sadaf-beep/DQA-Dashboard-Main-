@@ -6,6 +6,7 @@ interface DashboardTrackerProps {
   tasks: Task[];
   users: User[];
   onUpdateTask: (task: Task) => void;
+  onDeleteTasks: (taskIds: string[]) => void;
 }
 
 interface TrackerRow {
@@ -22,7 +23,7 @@ interface TrackerRow {
   createdAt: number;
 }
 
-const DashboardTracker: React.FC<DashboardTrackerProps> = ({ tasks, users, onUpdateTask }) => {
+const DashboardTracker: React.FC<DashboardTrackerProps> = ({ tasks, users, onUpdateTask, onDeleteTasks }) => {
   const [sortField, setSortField] = useState<keyof TrackerRow | 'studio'>('createdAt');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
@@ -255,6 +256,7 @@ const DashboardTracker: React.FC<DashboardTrackerProps> = ({ tasks, users, onUpd
               <th className="px-4 py-3 font-semibold cursor-pointer hover:bg-indigo-700" onClick={() => handleSort('dueDate')}>
                  Due Date
               </th>
+              <th className="px-4 py-3 font-semibold text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -345,11 +347,24 @@ const DashboardTracker: React.FC<DashboardTrackerProps> = ({ tasks, users, onUpd
                 <td className="px-4 py-2 text-slate-600 whitespace-nowrap text-xs">
                    {row.dueDate ? new Date(row.dueDate).toLocaleDateString() : '-'}
                 </td>
+                <td className="px-4 py-2 text-right">
+                   <button 
+                     onClick={() => {
+                        if (window.confirm(`Are you sure you want to permanently delete all tasks associated with "${row.studioName}"?`)) {
+                           onDeleteTasks(row.originalTasks.map(t => t.id));
+                        }
+                     }}
+                     className="text-slate-400 hover:text-red-600 p-1 rounded hover:bg-red-50 transition-colors"
+                     title="Delete Record"
+                   >
+                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                   </button>
+                </td>
               </tr>
             ))}
             {tableData.length === 0 && (
                <tr>
-                 <td colSpan={9} className="p-8 text-center text-slate-400 italic">No records found.</td>
+                 <td colSpan={10} className="p-8 text-center text-slate-400 italic">No records found.</td>
                </tr>
             )}
           </tbody>

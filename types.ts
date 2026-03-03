@@ -80,6 +80,7 @@ export interface Task {
   isEscalated?: boolean; // Visual flag
   inventoryFileId?: string; // Link to inventory file
   inventoryItemIds?: string[]; // Link to specific items
+  hiddenFromBoard?: boolean; // If true, task is hidden from Task Board but visible in Daily Tracker
 }
 
 export interface EscalationMessage {

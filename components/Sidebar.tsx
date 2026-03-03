@@ -30,15 +30,6 @@ const Sidebar: React.FC<SidebarProps> = ({
     { id: 'inventory', label: 'Inventory Data', icon: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4' },
   ];
 
-  // Only add Operational Analytics for Managers
-  if (user.role === UserRole.MANAGER) {
-      menuItems.push({ 
-        id: 'analytics', 
-        label: 'Operational Analytics', 
-        icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2' 
-      });
-  }
-
   menuItems.push({ id: 'invoices', label: 'Studio Invoice', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' });
 
   // Only add Management tab for Managers
@@ -51,6 +42,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   }
 
   menuItems.push({ id: 'onboarding', label: 'Onboarding Alert', icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9' });
+  menuItems.push({ id: 'eol-stdw', label: 'EOL and STDW', icon: 'M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9.5a2.5 2.5 0 00-2.5-2.5H14' });
 
   // All users can edit profile
   menuItems.push({ 

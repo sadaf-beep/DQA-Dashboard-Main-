@@ -74,6 +74,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
 
   // Filtering Logic: Agents can now see all tasks, but UI restricts editing.
   const filteredTasks = tasks.filter(t => {
+    if (t.hiddenFromBoard) return false;
     return filter === 'ALL' || t.assigneeId === currentUser.id;
   });
 

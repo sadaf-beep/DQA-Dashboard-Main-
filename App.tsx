@@ -6,7 +6,6 @@ import InventoryManager from './components/InventoryManager';
 import InvoiceManager from './components/InvoiceManager';
 import DashboardView from './components/DashboardView';
 import AgentManagement from './components/AgentManagement';
-import OperationalAnalytics from './components/OperationalAnalytics';
 import ProfileSettings from './components/ProfileSettings';
 import Login from './components/Login';
 import NotificationToast from './components/NotificationToast'; // New Component
@@ -346,9 +345,19 @@ const App: React.FC = () => {
   };
 
   const handleDeleteTask = (taskId: string) => {
-    // Optimistic update: Remove from UI immediately
-    setTasks(prev => prev.filter(t => t.id !== taskId));
-    storageService.deleteTask(taskId);
+    // Instead of deleting from DB, we just hide it from the task board
+    const task = tasks.find(t => t.id === taskId);
+    if (task) {
+      const updatedTask = { ...task, hiddenFromBoard: true };
+      setTasks(prev => prev.map(t => t.id === taskId ? updatedTask : t));
+      storageService.saveTask(updatedTask);
+    }
+  };
+
+  const handleDeleteTasks = (taskIds: string[]) => {
+    // Permanently delete multiple tasks from DB (used by Daily Tracker)
+    setTasks(prev => prev.filter(t => !taskIds.includes(t.id)));
+    taskIds.forEach(id => storageService.deleteTask(id));
   };
 
   const handleInventoryUpload = (file: InventoryFile) => {
@@ -504,10 +513,9 @@ const App: React.FC = () => {
       />
       <main className="flex-1 ml-64 p-8 h-screen overflow-hidden flex flex-col">
         <div className="flex-1 overflow-auto w-full pb-8">
-          {activeTab === 'dashboard' && <DashboardView tasks={tasks} users={users} currentUser={currentUser} inventories={inventories} escalations={escalations} notifications={notifications} onDismissNotification={dismissNotification} onUpdateTask={handleTaskUpdate} onResolveEscalation={handleEscalationReply} onCloseEscalation={handleCloseEscalation} />}
+          {activeTab === 'dashboard' && <DashboardView tasks={tasks} users={users} currentUser={currentUser} inventories={inventories} escalations={escalations} notifications={notifications} onDismissNotification={dismissNotification} onUpdateTask={handleTaskUpdate} onDeleteTasks={handleDeleteTasks} onResolveEscalation={handleEscalationReply} onCloseEscalation={handleCloseEscalation} />}
           {activeTab === 'tasks' && <TaskBoard tasks={tasks} users={users} currentUser={currentUser} onAddTask={handleAddTask} onUpdateTask={handleTaskUpdate} onDeleteTask={handleDeleteTask} onEscalateTask={handleEscalateTask} escalations={escalations} onResolveEscalation={handleEscalationReply} onCloseEscalation={handleCloseEscalation} />}
           {activeTab === 'inventory' && <InventoryManager inventories={inventories} currentUser={currentUser} users={users} onUpload={handleInventoryUpload} onDeleteFile={handleInventoryDelete} onUpdateItems={handleInventoryItemsUpdate} onAddTask={handleAddTask} />}
-          {activeTab === 'analytics' && currentUser.role === UserRole.MANAGER && <OperationalAnalytics tasks={tasks} inventories={inventories} invoices={invoices} users={users} />}
           {activeTab === 'invoices' && (
             <InvoiceManager 
               invoices={invoices} 
@@ -532,6 +540,11 @@ const App: React.FC = () => {
           {activeTab === 'onboarding' && (
             <div className="flex-1 h-full bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                <iframe src="https://beamdynamics.retool.com/embedded/public/2c7c775f-0c10-4fb2-ab48-c513d2d82497" className="w-full h-full border-0" title="Onboarding Alert" />
+            </div>
+          )}
+          {activeTab === 'eol-stdw' && (
+            <div className="flex-1 h-full bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+               <iframe src="https://docs.google.com/spreadsheets/d/1ezZlikpYEUR-UphMEFsHnwURcI_co9ofbCWjJtSYgfQ/edit?gid=0#gid=0" className="w-full h-full border-0" title="EOL and STDW" />
             </div>
           )}
           {activeTab === 'profile' && (

@@ -13,11 +13,12 @@ interface DashboardViewProps {
   notifications: Notification[];
   onDismissNotification: (id: string) => void;
   onUpdateTask: (task: Task) => void;
+  onDeleteTasks: (taskIds: string[]) => void;
   onResolveEscalation: (escalation: Escalation, message: string) => void;
   onCloseEscalation: (escalation: Escalation) => void;
 }
 
-const DashboardView: React.FC<DashboardViewProps> = ({ tasks, users, currentUser, inventories, escalations, notifications, onDismissNotification, onUpdateTask, onResolveEscalation, onCloseEscalation }) => {
+const DashboardView: React.FC<DashboardViewProps> = ({ tasks, users, currentUser, inventories, escalations, notifications, onDismissNotification, onUpdateTask, onDeleteTasks, onResolveEscalation, onCloseEscalation }) => {
   const [activeEscalation, setActiveEscalation] = useState<Escalation | null>(null);
 
   // Sync the currently open escalation modal with updates from the parent prop
@@ -243,7 +244,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ tasks, users, currentUser
        )}
 
        <div className="flex-1 min-h-[500px]">
-          <DashboardTracker tasks={tasks} users={users} onUpdateTask={onUpdateTask} />
+          <DashboardTracker tasks={tasks} users={users} onUpdateTask={onUpdateTask} onDeleteTasks={onDeleteTasks} />
        </div>
 
        {activeEscalation && (
