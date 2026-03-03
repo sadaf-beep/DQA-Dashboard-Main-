@@ -65,7 +65,7 @@ const App: React.FC = () => {
   const [escalations, setEscalations] = useState<Escalation[]>([]); 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [notifications, setNotifications] = useState<Notification[]>(() => {
-    const saved = localStorage.getItem('dqa_notifications');
+    const saved = localStorage.getItem('dqa_notifications_v2');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -80,14 +80,17 @@ const App: React.FC = () => {
   });
 
   useEffect(() => {
-    localStorage.setItem('dqa_notifications', JSON.stringify(notifications));
+    localStorage.setItem('dqa_notifications_v2', JSON.stringify(notifications));
   }, [notifications]);
 
   // Refs for change detection (Notification Logic)
   const prevTasksRef = useRef<Task[]>([]);
   const prevInvoicesRef = useRef<Invoice[]>([]);
   const prevEscalationsRef = useRef<Escalation[]>([]);
-  const isFirstLoad = useRef(true);
+  const initialTasksLoaded = useRef(false);
+  const initialInvoicesLoaded = useRef(false);
+  const initialEscalationsLoaded = useRef(false);
+  const isInitialDataLoaded = useRef(false);
 
   // --- REAL-TIME DATA SUBSCRIPTIONS ---
   useEffect(() => {
@@ -100,10 +103,19 @@ const App: React.FC = () => {
         setIsAppLoading(false);
     });
 
-    const unsubTasks = storageService.subscribeTasks(setTasks);
+    const unsubTasks = storageService.subscribeTasks((data) => {
+        setTasks(data);
+        initialTasksLoaded.current = true;
+    });
     const unsubInv = storageService.subscribeInventories(setInventories);
-    const unsubInvoices = storageService.subscribeInvoices(setInvoices);
-    const unsubEsc = storageService.subscribeEscalations(setEscalations);
+    const unsubInvoices = storageService.subscribeInvoices((data) => {
+        setInvoices(data);
+        initialInvoicesLoaded.current = true;
+    });
+    const unsubEsc = storageService.subscribeEscalations((data) => {
+        setEscalations(data);
+        initialEscalationsLoaded.current = true;
+    });
 
     return () => {
       unsubUsers();
@@ -146,13 +158,13 @@ const App: React.FC = () => {
 
   // --- NOTIFICATION & DETECTION LOGIC ---
   useEffect(() => {
-    if (isFirstLoad.current) {
-        if (tasks.length > 0 || invoices.length > 0) {
-            prevTasksRef.current = tasks;
-            prevInvoicesRef.current = invoices;
-            prevEscalationsRef.current = escalations;
-            isFirstLoad.current = false;
+    if (!isInitialDataLoaded.current) {
+        if (initialTasksLoaded.current && initialInvoicesLoaded.current && initialEscalationsLoaded.current) {
+            isInitialDataLoaded.current = true;
         }
+        prevTasksRef.current = tasks;
+        prevInvoicesRef.current = invoices;
+        prevEscalationsRef.current = escalations;
         return;
     }
 
