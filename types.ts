@@ -190,6 +190,22 @@ export interface Invoice {
   completedAt?: number;
 }
 
+// --- LEAVE MANAGEMENT ---
+export type LeaveType = 'Annual Leave' | 'Sick Leave' | 'Short-Notice Leave' | 'Maternity Leave' | 'Bereavement Leave';
+
+export interface LeaveRequest {
+  id: string;
+  userId: string;
+  userName: string;
+  type: LeaveType;
+  reason: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  createdAt: number;
+  daysRequested: number;
+}
+
 // --- ANALYTICS ---
 export interface OperationalStats {
   totalAugmented: number;

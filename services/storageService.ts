@@ -151,6 +151,32 @@ const mapEscalationToDB = (esc: Escalation) => ({
   updated_at: esc.updatedAt
 });
 
+const mapLeaveRequestFromDB = (row: any): LeaveRequest => ({
+  id: row.id,
+  userId: row.user_id,
+  userName: row.user_name,
+  type: row.type,
+  reason: row.reason,
+  startDate: row.start_date,
+  endDate: row.end_date,
+  status: row.status,
+  createdAt: Number(row.created_at),
+  daysRequested: row.days_requested
+});
+
+const mapLeaveRequestToDB = (req: LeaveRequest) => ({
+  id: req.id,
+  user_id: req.userId,
+  user_name: req.userName,
+  type: req.type,
+  reason: req.reason,
+  start_date: req.startDate,
+  end_date: req.endDate,
+  status: req.status,
+  created_at: req.createdAt,
+  days_requested: req.daysRequested
+});
+
 // --- SERVICE IMPLEMENTATION ---
 
 // Simple event bus for connection status
@@ -358,13 +384,40 @@ export const storageService = {
     await supabase.from('escalations').upsert(mapEscalationToDB(esc));
   },
 
+  // --- LEAVE REQUESTS ---
+  subscribeLeaveRequests: (callback: (requests: LeaveRequest[]) => void) => {
+    supabase.from('leave_requests').select('*').then(({ data }) => {
+      if (data) callback(data.map(mapLeaveRequestFromDB));
+    });
+
+    const channel = supabase.channel('leave-requests-change')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_requests' }, () => {
+         supabase.from('leave_requests').select('*').then(({ data }) => {
+           if (data) callback(data.map(mapLeaveRequestFromDB));
+         });
+      });
+
+    setupChannelListeners(channel);
+
+    return () => { supabase.removeChannel(channel); };
+  },
+
+  saveLeaveRequest: async (req: LeaveRequest) => {
+    await supabase.from('leave_requests').upsert(mapLeaveRequestToDB(req));
+  },
+
+  deleteLeaveRequest: async (id: string) => {
+    await supabase.from('leave_requests').delete().eq('id', id);
+  },
+
   fetchAllData: async () => {
-    const [users, tasks, inventories, invoices, escalations] = await Promise.all([
+    const [users, tasks, inventories, invoices, escalations, leaveRequests] = await Promise.all([
       supabase.from('users').select('*'),
       supabase.from('tasks').select('*'),
       supabase.from('inventory_files').select('*'),
       supabase.from('invoices').select('*'),
-      supabase.from('escalations').select('*')
+      supabase.from('escalations').select('*'),
+      supabase.from('leave_requests').select('*')
     ]);
 
     return {
@@ -372,7 +425,8 @@ export const storageService = {
       tasks: (tasks.data || []).map(mapTaskFromDB),
       inventories: (inventories.data || []).map(mapInventoryFromDB),
       invoices: (invoices.data || []).map(mapInvoiceFromDB),
-      escalations: (escalations.data || []).map(mapEscalationFromDB)
+      escalations: (escalations.data || []).map(mapEscalationFromDB),
+      leaveRequests: (leaveRequests.data || []).map(mapLeaveRequestFromDB)
     };
   }
 };

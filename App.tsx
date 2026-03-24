@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar';
 import TaskBoard from './components/TaskBoard';
 import InventoryManager from './components/InventoryManager';
 import InvoiceManager from './components/InvoiceManager';
+import LeaveCalendar from './components/LeaveCalendar';
 import DashboardView from './components/DashboardView';
 import AgentManagement from './components/AgentManagement';
 import ProfileSettings from './components/ProfileSettings';
@@ -56,16 +57,28 @@ const App: React.FC = () => {
   // State initialization (Empty by default, populated via subscriptions)
   const [users, setUsers] = useState<User[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(() => storageService.getUserSession());
+  const [viewAsAgent, setViewAsAgent] = useState(false);
   const [isAppLoading, setIsAppLoading] = useState(true); // Loading state for initial data fetch
   const [connectionStatus, setConnectionStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'CONNECTING'>('CONNECTING');
+  
+  const effectiveUser = useMemo(() => {
+    if (currentUser?.role === UserRole.MANAGER && viewAsAgent) {
+      return { ...currentUser, role: UserRole.AGENT };
+    }
+    return currentUser;
+  }, [currentUser, viewAsAgent]);
   
   const [tasks, setTasks] = useState<Task[]>([]);
   const [inventories, setInventories] = useState<InventoryFile[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [escalations, setEscalations] = useState<Escalation[]>([]); 
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [notifications, setNotifications] = useState<Notification[]>(() => {
-    const saved = localStorage.getItem('dqa_notifications_v2');
+    const user = storageService.getUserSession();
+    if (!user) return [];
+    
+    const saved = localStorage.getItem(`dqa_notifications_v2_${user.id}`);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -80,8 +93,24 @@ const App: React.FC = () => {
   });
 
   useEffect(() => {
-    localStorage.setItem('dqa_notifications_v2', JSON.stringify(notifications));
-  }, [notifications]);
+    if (currentUser) {
+      const saved = localStorage.getItem(`dqa_notifications_v2_${currentUser.id}`);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          const now = new Date();
+          const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+          setNotifications(parsed.filter((n: Notification) => n.timestamp >= startOfDay));
+        } catch (e) {
+          setNotifications([]);
+        }
+      } else {
+        setNotifications([]);
+      }
+    } else {
+      setNotifications([]);
+    }
+  }, [currentUser?.id]);
 
   // Refs for change detection (Notification Logic)
   const prevTasksRef = useRef<Task[]>([]);
@@ -116,6 +145,9 @@ const App: React.FC = () => {
         setEscalations(data);
         initialEscalationsLoaded.current = true;
     });
+    const unsubLeave = storageService.subscribeLeaveRequests((data) => {
+        setLeaveRequests(data);
+    });
 
     return () => {
       unsubUsers();
@@ -123,6 +155,7 @@ const App: React.FC = () => {
       unsubInv();
       unsubInvoices();
       unsubEsc();
+      unsubLeave();
     };
   }, []);
 
@@ -168,11 +201,20 @@ const App: React.FC = () => {
         return;
     }
 
+    // Always update refs to prevent triggering notifications for events that happened while logged out
+    const oldTasks = prevTasksRef.current;
+    const oldInvoices = prevInvoicesRef.current;
+    const oldEscalations = prevEscalationsRef.current;
+
+    prevTasksRef.current = tasks;
+    prevInvoicesRef.current = invoices;
+    prevEscalationsRef.current = escalations;
+
     if (!currentUser) return;
 
     // 1. Detect Task Changes
     tasks.forEach(newTask => {
-        const oldTask = prevTasksRef.current.find(t => t.id === newTask.id);
+        const oldTask = oldTasks.find(t => t.id === newTask.id);
         
         // A) New Task Assigned
         if (!oldTask) {
@@ -224,7 +266,7 @@ const App: React.FC = () => {
 
     // 3. Detect Escalations
     escalations.forEach(newEsc => {
-        const oldEsc = prevEscalationsRef.current.find(e => e.id === newEsc.id);
+        const oldEsc = oldEscalations.find(e => e.id === newEsc.id);
         if (!oldEsc) {
             // New Escalation (Critical)
             if (currentUser.role === UserRole.MANAGER || newEsc.agentId === currentUser.id) {
@@ -245,11 +287,6 @@ const App: React.FC = () => {
             }
         }
     });
-
-    // Update refs
-    prevTasksRef.current = tasks;
-    prevInvoicesRef.current = invoices;
-    prevEscalationsRef.current = escalations;
 
   }, [tasks, invoices, escalations, currentUser, users]);
 
@@ -302,12 +339,24 @@ const App: React.FC = () => {
 
   const addNotification = (title: string, message: string, playSound: boolean = false) => {
     const newNotif: Notification = { id: `notif-${Date.now()}-${Math.random()}`, title, message, read: false, timestamp: Date.now() };
-    setNotifications(prev => [newNotif, ...prev]);
+    setNotifications(prev => {
+      const newNotifs = [newNotif, ...prev];
+      if (currentUser) {
+        localStorage.setItem(`dqa_notifications_v2_${currentUser.id}`, JSON.stringify(newNotifs));
+      }
+      return newNotifs;
+    });
     if (playSound) playNotificationSound();
   };
 
   const dismissNotification = (id: string) => {
-      setNotifications(prev => prev.filter(n => n.id !== id));
+      setNotifications(prev => {
+        const newNotifs = prev.filter(n => n.id !== id);
+        if (currentUser) {
+          localStorage.setItem(`dqa_notifications_v2_${currentUser.id}`, JSON.stringify(newNotifs));
+        }
+        return newNotifs;
+      });
   };
 
   // --- HANDLERS ---
@@ -345,6 +394,26 @@ const App: React.FC = () => {
     }
     handleLoginSuccess(newUser, true);
   };
+
+  // Automatic cleanup of old completed tasks from the board (older than 7 days)
+  useEffect(() => {
+    if (!isInitialDataLoaded.current || tasks.length === 0) return;
+    
+    const now = new Date().getTime();
+    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+    
+    const tasksToHide = tasks.filter(t => 
+      t.status === TaskStatus.DONE && 
+      !t.hiddenFromBoard && 
+      (now - t.createdAt) > SEVEN_DAYS_MS
+    );
+
+    if (tasksToHide.length > 0) {
+      tasksToHide.forEach(t => {
+        storageService.updateTask({ ...t, hiddenFromBoard: true });
+      });
+    }
+  }, [tasks.length]);
 
   const handleTaskUpdate = (updatedTask: Task) => {
     storageService.updateTask(updatedTask);
@@ -485,6 +554,7 @@ const App: React.FC = () => {
   const handleLogout = () => {
     storageService.clearUserSession();
     setCurrentUser(null);
+    setNotifications([]);
   };
 
   // --- RENDERING ---
@@ -511,10 +581,20 @@ const App: React.FC = () => {
     );
   }
 
+  const handleToggleViewAsAgent = () => {
+    setViewAsAgent(prev => {
+      const newValue = !prev;
+      if (newValue && activeTab === 'agent-management') {
+        setActiveTab('dashboard');
+      }
+      return newValue;
+    });
+  };
+
   return (
     <div className="flex h-screen bg-slate-50">
       <Sidebar 
-         user={currentUser} 
+         user={effectiveUser} 
          activeTab={activeTab} 
          onTabChange={setActiveTab} 
          onLogout={handleLogout} 
@@ -522,26 +602,42 @@ const App: React.FC = () => {
          storageUsageMB={storageUsageMB}
          onRefresh={handleManualRefresh}
          unreadCount={notifications.length}
+         actualUserRole={currentUser.role}
+         isViewingAsAgent={viewAsAgent}
+         onToggleViewAsAgent={handleToggleViewAsAgent}
       />
       <main className="flex-1 ml-64 p-8 h-screen overflow-hidden flex flex-col">
         <div className="flex-1 overflow-auto w-full pb-8">
-          {activeTab === 'dashboard' && <DashboardView tasks={tasks} users={users} currentUser={currentUser} inventories={inventories} escalations={escalations} notifications={notifications} onDismissNotification={dismissNotification} onUpdateTask={handleTaskUpdate} onDeleteTasks={handleDeleteTasks} onResolveEscalation={handleEscalationReply} onCloseEscalation={handleCloseEscalation} />}
-          {activeTab === 'tasks' && <TaskBoard tasks={tasks} users={users} currentUser={currentUser} onAddTask={handleAddTask} onUpdateTask={handleTaskUpdate} onDeleteTask={handleDeleteTask} onEscalateTask={handleEscalateTask} escalations={escalations} onResolveEscalation={handleEscalationReply} onCloseEscalation={handleCloseEscalation} />}
-          {activeTab === 'inventory' && <InventoryManager inventories={inventories} currentUser={currentUser} users={users} onUpload={handleInventoryUpload} onDeleteFile={handleInventoryDelete} onUpdateItems={handleInventoryItemsUpdate} onAddTask={handleAddTask} />}
+          {activeTab === 'dashboard' && <DashboardView tasks={tasks} users={users} currentUser={effectiveUser} inventories={inventories} escalations={escalations} notifications={notifications} onDismissNotification={dismissNotification} onUpdateTask={handleTaskUpdate} onDeleteTasks={handleDeleteTasks} onResolveEscalation={handleEscalationReply} onCloseEscalation={handleCloseEscalation} />}
+          {activeTab === 'tasks' && <TaskBoard tasks={tasks} users={users} currentUser={effectiveUser} onAddTask={handleAddTask} onUpdateTask={handleTaskUpdate} onDeleteTask={handleDeleteTask} onEscalateTask={handleEscalateTask} escalations={escalations} onResolveEscalation={handleEscalationReply} onCloseEscalation={handleCloseEscalation} />}
+          {activeTab === 'inventory' && <InventoryManager inventories={inventories} currentUser={effectiveUser} users={users} onUpload={handleInventoryUpload} onDeleteFile={handleInventoryDelete} onUpdateItems={handleInventoryItemsUpdate} onAddTask={handleAddTask} />}
           {activeTab === 'invoices' && (
             <InvoiceManager 
               invoices={invoices} 
-              currentUser={currentUser} 
+              currentUser={effectiveUser} 
               users={users}
               onAddInvoice={handleAddInvoice} 
               onUpdateInvoice={handleUpdateInvoice} 
               onDeleteInvoice={handleDeleteInvoice} 
             />
           )}
-          {activeTab === 'agent-management' && currentUser.role === UserRole.MANAGER && (
+          {activeTab === 'leave-holidays' && (
+            <LeaveCalendar 
+              currentUser={effectiveUser} 
+              users={users} 
+              leaveRequests={leaveRequests}
+              onAddLeaveRequest={async (req) => {
+                await storageService.saveLeaveRequest(req);
+              }}
+              onUpdateLeaveRequest={async (req) => {
+                await storageService.saveLeaveRequest(req);
+              }}
+            />
+          )}
+          {activeTab === 'agent-management' && effectiveUser.role === UserRole.MANAGER && (
             <AgentManagement 
               users={users} 
-              currentUser={currentUser} 
+              currentUser={effectiveUser} 
               tasks={tasks} 
               inventories={inventories} 
               onAddUser={handleAddAgent}
@@ -560,7 +656,7 @@ const App: React.FC = () => {
             </div>
           )}
           {activeTab === 'profile' && (
-             <ProfileSettings user={currentUser} onUpdateUser={handleUpdateAgent} />
+             <ProfileSettings user={effectiveUser} onUpdateUser={handleUpdateAgent} />
           )}
         </div>
       </main>

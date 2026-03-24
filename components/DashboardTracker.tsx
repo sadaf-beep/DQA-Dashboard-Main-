@@ -1,10 +1,11 @@
 
 import React, { useState, useMemo } from 'react';
-import { Task, User, TaskType, TaskStatus, TaskPriority, TaskAttachment } from '../types';
+import { Task, User, TaskType, TaskStatus, TaskPriority, TaskAttachment, UserRole } from '../types';
 
 interface DashboardTrackerProps {
   tasks: Task[];
   users: User[];
+  currentUser: User;
   onUpdateTask: (task: Task) => void;
   onDeleteTasks: (taskIds: string[]) => void;
 }
@@ -23,7 +24,7 @@ interface TrackerRow {
   createdAt: number;
 }
 
-const DashboardTracker: React.FC<DashboardTrackerProps> = ({ tasks, users, onUpdateTask, onDeleteTasks }) => {
+const DashboardTracker: React.FC<DashboardTrackerProps> = ({ tasks, users, currentUser, onUpdateTask, onDeleteTasks }) => {
   const [sortField, setSortField] = useState<keyof TrackerRow | 'studio'>('createdAt');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
@@ -219,6 +220,48 @@ const DashboardTracker: React.FC<DashboardTrackerProps> = ({ tasks, users, onUpd
     }
   };
 
+  const handleDownloadAndReset = () => {
+    if (!window.confirm("Are you sure you want to download the current tracker data and permanently delete all these tasks from the database? This action cannot be undone.")) {
+      return;
+    }
+
+    // 1. Generate CSV
+    const headers = ['Date Created', 'Category', 'Studio/Project', 'Task Name', 'Status', 'Priority', 'Assigned To', 'Due Date'];
+    const csvRows = [headers.join(',')];
+
+    tableData.forEach(row => {
+      const assignees = row.assigneeIds.map(uid => users.find(u => u.id === uid)?.name || 'Unknown').join('; ');
+      const dateCreated = new Date(row.createdAt).toLocaleDateString();
+      const dueDate = row.dueDate ? new Date(row.dueDate).toLocaleDateString() : '';
+      
+      const csvRow = [
+        `"${dateCreated}"`,
+        `"${row.category}"`,
+        `"${row.studioName}"`,
+        `"${row.taskLabel}"`,
+        `"${row.status}"`,
+        `"${row.priority}"`,
+        `"${assignees}"`,
+        `"${dueDate}"`
+      ];
+      csvRows.push(csvRow.join(','));
+    });
+
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Master_Daily_Tracker_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    // 2. Delete all tasks in the tracker
+    const allTaskIds = tableData.flatMap(row => row.originalTasks.map(t => t.id));
+    onDeleteTasks(allTaskIds);
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full min-h-[500px]">
       <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
@@ -226,10 +269,22 @@ const DashboardTracker: React.FC<DashboardTrackerProps> = ({ tasks, users, onUpd
           <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
           Master Daily Tracker
         </h3>
-        <div className="flex gap-2 text-xs text-slate-500">
-             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-700"></span> Trial/Augment</span>
-             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-700"></span> Paid/Done</span>
-             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-100 border border-purple-200"></span> Invoice</span>
+        <div className="flex items-center gap-4">
+          <div className="flex gap-2 text-xs text-slate-500">
+               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-700"></span> Trial/Augment</span>
+               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-700"></span> Paid/Done</span>
+               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-100 border border-purple-200"></span> Invoice</span>
+          </div>
+          {currentUser.role === UserRole.MANAGER && (
+            <button
+              onClick={handleDownloadAndReset}
+              className="px-3 py-1.5 text-xs font-bold bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors flex items-center gap-1"
+              title="Download CSV and delete tasks from database"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+              Download & Reset
+            </button>
+          )}
         </div>
       </div>
       

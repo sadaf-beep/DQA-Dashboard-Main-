@@ -338,6 +338,22 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
           </div>
           
           {currentUser.role === UserRole.MANAGER && (
+            <button 
+              onClick={() => {
+                if (window.confirm('Are you sure you want to archive all completed tasks? They will be removed from this board but kept in the Master Daily Tracker.')) {
+                  tasks.filter(t => t.status === TaskStatus.DONE && !t.hiddenFromBoard).forEach(t => {
+                    onUpdateTask({ ...t, hiddenFromBoard: true });
+                  });
+                }
+              }}
+              className="px-4 py-2 text-sm font-bold rounded-md bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors border border-indigo-200 flex items-center gap-1"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+              Archive Completed
+            </button>
+          )}
+          
+          {currentUser.role === UserRole.MANAGER && (
             <Button onClick={() => setIsCreateModalOpen(true)} className="shadow-md shadow-blue-500/20">
                 + New Task
             </Button>

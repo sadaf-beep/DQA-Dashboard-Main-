@@ -102,6 +102,208 @@ const InvoiceAssignmentControl: React.FC<{
   );
 };
 
+const InvoiceCard: React.FC<{
+  invoice: Invoice;
+  onClick: () => void;
+}> = ({ invoice, onClick }) => {
+  return (
+    <Card 
+      className={`p-5 flex flex-col relative overflow-hidden cursor-pointer transition-all duration-200 hover:shadow-md hover:-translate-y-1 ${invoice.status === 'UPLOADED' ? 'bg-green-50/50 opacity-90' : invoice.status === 'COMPLETED' ? 'bg-indigo-50/20' : ''}`}
+      onClick={onClick}
+    >
+      {/* Status Strip */}
+      <div className={`absolute top-0 left-0 w-1.5 h-full ${
+        invoice.status === 'UPLOADED' ? 'bg-purple-600' :
+        invoice.status === 'COMPLETED' ? 'bg-green-500' : 
+        invoice.status === 'ASSIGNED' ? 'bg-blue-500' : 'bg-slate-300'
+      }`}></div>
+      
+      <div className="pl-3">
+        <div className="flex justify-between items-start mb-2">
+           <h3 className="font-bold text-slate-800 text-lg">{invoice.referenceName}</h3>
+           <Badge color={
+              invoice.status === 'UPLOADED' ? 'blue' : 
+              invoice.status === 'COMPLETED' ? 'green' : 
+              invoice.status === 'ASSIGNED' ? 'blue' : 'gray'
+           }>
+             {invoice.status}
+           </Badge>
+        </div>
+        <p className="text-xs text-slate-400 mt-1">Created: {new Date(invoice.createdAt).toLocaleDateString()}</p>
+        {invoice.dueDate && (
+           <p className="text-xs text-red-500 mt-1 font-medium">Due: {new Date(invoice.dueDate).toLocaleDateString()}</p>
+        )}
+        
+        {invoice.isPreProcessed && (
+           <div className="mt-3">
+             <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-purple-100 text-purple-700 text-xs font-bold border border-purple-200">
+               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+               Pre-processed
+             </span>
+           </div>
+        )}
+      </div>
+    </Card>
+  );
+};
+
+const InvoiceModal: React.FC<{
+  invoice: Invoice;
+  isManager: boolean;
+  users: User[];
+  agentUploads: Record<string, File>;
+  onClose: () => void;
+  handleDownload: (file: InvoiceFileMeta) => void;
+  handleAssignChange: (invoice: Invoice, assigneeId: string, startDate: string, dueDate: string) => void;
+  onUpdateInvoice: (invoice: Invoice) => void;
+  onDeleteInvoice: (id: string) => void;
+  handleAgentFileSelect: (invoiceId: string, e: React.ChangeEvent<HTMLInputElement>) => void;
+  handleMarkComplete: (invoice: Invoice) => void;
+}> = ({
+  invoice,
+  isManager,
+  users,
+  agentUploads,
+  onClose,
+  handleDownload,
+  handleAssignChange,
+  onUpdateInvoice,
+  onDeleteInvoice,
+  handleAgentFileSelect,
+  handleMarkComplete
+}) => {
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="p-6 border-b border-slate-100 flex justify-between items-start bg-slate-50">
+          <div>
+            <div className="flex items-center gap-3 mb-1">
+              <h2 className="text-xl font-bold text-slate-800">{invoice.referenceName}</h2>
+              <Badge color={
+                  invoice.status === 'UPLOADED' ? 'blue' : 
+                  invoice.status === 'COMPLETED' ? 'green' : 
+                  invoice.status === 'ASSIGNED' ? 'blue' : 'gray'
+              }>
+                {invoice.status}
+              </Badge>
+            </div>
+            <div className="flex gap-4 text-sm text-slate-500">
+              <p>Created: {new Date(invoice.createdAt).toLocaleDateString()}</p>
+              {invoice.dueDate && <p className="text-red-500 font-medium">Due: {new Date(invoice.dueDate).toLocaleDateString()}</p>}
+            </div>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 overflow-y-auto flex-1">
+          {/* Files Section */}
+          <div className="space-y-4 mb-8">
+             <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Input Files</div>
+             
+             {/* PDF File */}
+             <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200 group">
+                <div className="flex items-center gap-3 overflow-hidden">
+                   <div className="p-2 bg-red-100 text-red-600 rounded-lg">
+                     <svg className="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                   </div>
+                   <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-700 truncate">{invoice.pdfFile.name}</p>
+                      <p className="text-xs text-slate-400">{invoice.pdfFile.size}</p>
+                   </div>
+                </div>
+                <button onClick={() => handleDownload(invoice.pdfFile)} className="text-slate-400 hover:text-blue-600 p-2" title="Download Original PDF">
+                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                </button>
+             </div>
+
+             {/* CSV File */}
+             {invoice.csvFile && (
+               <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200 group">
+                  <div className="flex items-center gap-3 overflow-hidden">
+                     <div className="p-2 bg-green-100 text-green-600 rounded-lg">
+                       <svg className="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                     </div>
+                     <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-700 truncate">{invoice.csvFile.name}</p>
+                        <p className="text-xs text-slate-400">{invoice.csvFile.size}</p>
+                     </div>
+                  </div>
+                  <button onClick={() => handleDownload(invoice.csvFile!)} className="text-slate-400 hover:text-blue-600 p-2" title="Download Pre-processed CSV">
+                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                  </button>
+               </div>
+             )}
+
+             {/* Final Deliverable Section */}
+             {invoice.finalCsvFile && (
+               <>
+                 <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mt-6 mb-2">Final Deliverable</div>
+                 <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200 group">
+                    <div className="flex items-center gap-3 overflow-hidden">
+                       <div className="p-2 bg-emerald-100 text-emerald-600 rounded-lg">
+                         <svg className="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                       </div>
+                       <div className="min-w-0">
+                          <p className="text-sm font-medium text-green-800 truncate">{invoice.finalCsvFile.name}</p>
+                          <p className="text-xs text-green-600">{invoice.finalCsvFile.size}</p>
+                       </div>
+                    </div>
+                    <button onClick={() => handleDownload(invoice.finalCsvFile!)} className="text-green-600 hover:text-green-800 p-2" title="Download Final CSV">
+                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                    </button>
+                 </div>
+               </>
+             )}
+          </div>
+
+          {/* Actions Section */}
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+             {isManager ? (
+               <InvoiceAssignmentControl 
+                 invoice={invoice} 
+                 users={users}
+                 onAssign={handleAssignChange}
+                 onUpdate={(inv) => { onUpdateInvoice(inv); onClose(); }}
+                 onDelete={(id) => { onDeleteInvoice(id); onClose(); }} 
+               />
+             ) : (
+               <div className="space-y-4">
+                 {invoice.status !== 'COMPLETED' && invoice.status !== 'UPLOADED' ? (
+                   <>
+                      <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-2">Upload Final CSV <span className="text-red-500">*</span></label>
+                        <input 
+                          type="file"
+                          accept=".csv"
+                          onChange={(e) => handleAgentFileSelect(invoice.id, e)}
+                          className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                        />
+                      </div>
+                      <Button onClick={() => { handleMarkComplete(invoice); onClose(); }} className="w-full py-3" disabled={!agentUploads[invoice.id]}>
+                        Submit & Complete Task
+                      </Button>
+                   </>
+                 ) : (
+                   <div className="text-center p-4 bg-green-50 rounded-lg border border-green-100">
+                     <span className="text-base text-green-700 font-bold flex items-center justify-center gap-2">
+                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                       {invoice.status === 'UPLOADED' ? 'Processing Complete' : 'Sent to Manager for Review'}
+                     </span>
+                   </div>
+                 )}
+               </div>
+             )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const InvoiceManager: React.FC<InvoiceManagerProps> = ({ invoices, currentUser, users, onAddInvoice, onUpdateInvoice, onDeleteInvoice }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -116,16 +318,25 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ invoices, currentUser, 
 
   // Agent Upload State (Map keyed by invoice ID to handle multiple cards)
   const [agentUploads, setAgentUploads] = useState<Record<string, File>>({});
+  
+  // Selected Invoice for Modal
+  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
 
   const fileInputPdfRef = useRef<HTMLInputElement>(null);
   const fileInputCsvRef = useRef<HTMLInputElement>(null);
 
   const isManager = currentUser.role === UserRole.MANAGER;
 
-  // Filter invoices for Agent view
-  const visibleInvoices = isManager 
-    ? invoices 
-    : invoices.filter(inv => inv.assigneeId === currentUser.id);
+  // Filter invoices for Agent view and hide completed/uploaded ones
+  const visibleInvoices = invoices.filter(inv => {
+    if (isManager) {
+      // Manager sees everything except UPLOADED
+      return inv.status !== 'UPLOADED';
+    } else {
+      // Agent sees only their own, and hides COMPLETED/UPLOADED
+      return inv.assigneeId === currentUser.id && inv.status !== 'COMPLETED' && inv.status !== 'UPLOADED';
+    }
+  });
 
   // Helper to read file content
   const readFile = (file: File): Promise<string> => {
@@ -320,7 +531,7 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ invoices, currentUser, 
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto pb-6">
+      <div className="grid gap-6 overflow-y-auto pb-6" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
         {visibleInvoices.length === 0 && (
           <div className="col-span-full text-center py-12 bg-white rounded-xl border border-dashed border-slate-300">
              <div className="text-slate-400 mb-2">No invoices found.</div>
@@ -329,135 +540,30 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ invoices, currentUser, 
         )}
 
         {visibleInvoices.map(invoice => (
-          <Card key={invoice.id} className={`p-5 flex flex-col relative overflow-hidden ${invoice.status === 'UPLOADED' ? 'bg-green-50/50 opacity-90' : invoice.status === 'COMPLETED' ? 'bg-indigo-50/20' : ''}`}>
-            {/* Status Strip */}
-            <div className={`absolute top-0 left-0 w-1.5 h-full ${
-              invoice.status === 'UPLOADED' ? 'bg-purple-600' :
-              invoice.status === 'COMPLETED' ? 'bg-green-500' : 
-              invoice.status === 'ASSIGNED' ? 'bg-blue-500' : 'bg-slate-300'
-            }`}></div>
-            
-            <div className="pl-3 mb-4">
-              <div className="flex justify-between items-start">
-                 <h3 className="font-bold text-slate-800 text-lg">{invoice.referenceName}</h3>
-                 <Badge color={
-                    invoice.status === 'UPLOADED' ? 'blue' : 
-                    invoice.status === 'COMPLETED' ? 'green' : 
-                    invoice.status === 'ASSIGNED' ? 'blue' : 'gray'
-                 }>
-                   {invoice.status}
-                 </Badge>
-              </div>
-              <p className="text-xs text-slate-400 mt-1">Created: {new Date(invoice.createdAt).toLocaleDateString()}</p>
-              {invoice.dueDate && (
-                 <p className="text-xs text-red-500 mt-1 font-medium">Due: {new Date(invoice.dueDate).toLocaleDateString()}</p>
-              )}
-              
-              {invoice.isPreProcessed && (
-                 <div className="mt-2">
-                   <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-purple-100 text-purple-700 text-xs font-bold border border-purple-200">
-                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                     Pre-processed
-                   </span>
-                 </div>
-              )}
-            </div>
-
-            {/* Files Section */}
-            <div className="pl-3 space-y-3 mb-6 flex-1">
-               <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Input Files</div>
-               
-               {/* PDF File */}
-               <div className="flex items-center justify-between p-2 bg-slate-50 rounded border border-slate-200 group">
-                  <div className="flex items-center gap-2 overflow-hidden">
-                     <svg className="w-6 h-6 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
-                     <div className="min-w-0">
-                        <p className="text-sm font-medium text-slate-700 truncate">{invoice.pdfFile.name}</p>
-                        <p className="text-xs text-slate-400">{invoice.pdfFile.size}</p>
-                     </div>
-                  </div>
-                  <button onClick={() => handleDownload(invoice.pdfFile)} className="text-slate-400 hover:text-blue-600" title="Download Original PDF">
-                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                  </button>
-               </div>
-
-               {/* CSV File */}
-               {invoice.csvFile && (
-                 <div className="flex items-center justify-between p-2 bg-slate-50 rounded border border-slate-200 group">
-                    <div className="flex items-center gap-2 overflow-hidden">
-                       <svg className="w-6 h-6 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                       <div className="min-w-0">
-                          <p className="text-sm font-medium text-slate-700 truncate">{invoice.csvFile.name}</p>
-                          <p className="text-xs text-slate-400">{invoice.csvFile.size}</p>
-                       </div>
-                    </div>
-                    <button onClick={() => handleDownload(invoice.csvFile!)} className="text-slate-400 hover:text-blue-600" title="Download Pre-processed CSV">
-                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                    </button>
-                 </div>
-               )}
-
-               {/* Final Deliverable Section */}
-               {invoice.finalCsvFile && (
-                 <>
-                   <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mt-4 mb-2">Final Deliverable</div>
-                   <div className="flex items-center justify-between p-2 bg-green-50 rounded border border-green-200 group">
-                      <div className="flex items-center gap-2 overflow-hidden">
-                         <svg className="w-6 h-6 text-emerald-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                         <div className="min-w-0">
-                            <p className="text-sm font-medium text-green-800 truncate">{invoice.finalCsvFile.name}</p>
-                            <p className="text-xs text-green-600">{invoice.finalCsvFile.size}</p>
-                         </div>
-                      </div>
-                      <button onClick={() => handleDownload(invoice.finalCsvFile!)} className="text-green-600 hover:text-green-800" title="Download Final CSV">
-                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                      </button>
-                   </div>
-                 </>
-               )}
-            </div>
-
-            {/* Actions Footer */}
-            <div className="pl-3 mt-auto pt-4 border-t border-slate-100">
-               {isManager ? (
-                 <InvoiceAssignmentControl 
-                   invoice={invoice} 
-                   users={users}
-                   onAssign={handleAssignChange}
-                   onUpdate={onUpdateInvoice}
-                   onDelete={onDeleteInvoice} 
-                 />
-               ) : (
-                 <div className="space-y-3">
-                   {invoice.status !== 'COMPLETED' && invoice.status !== 'UPLOADED' ? (
-                     <>
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-500 mb-1">Upload Final CSV <span className="text-red-500">*</span></label>
-                          <input 
-                            type="file"
-                            accept=".csv"
-                            onChange={(e) => handleAgentFileSelect(invoice.id, e)}
-                            className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
-                          />
-                        </div>
-                        <Button onClick={() => handleMarkComplete(invoice)} className="w-full" disabled={!agentUploads[invoice.id]}>
-                          Submit & Complete
-                        </Button>
-                     </>
-                   ) : (
-                     <div className="text-center">
-                       <span className="text-sm text-green-600 font-medium flex items-center justify-center gap-1">
-                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                         {invoice.status === 'UPLOADED' ? 'Processing Complete' : 'Sent to Manager'}
-                       </span>
-                     </div>
-                   )}
-                 </div>
-               )}
-            </div>
-          </Card>
+          <InvoiceCard
+            key={invoice.id}
+            invoice={invoice}
+            onClick={() => setSelectedInvoice(invoice)}
+          />
         ))}
       </div>
+
+      {/* Invoice Details Modal */}
+      {selectedInvoice && (
+        <InvoiceModal
+          invoice={selectedInvoice}
+          isManager={isManager}
+          users={users}
+          agentUploads={agentUploads}
+          onClose={() => setSelectedInvoice(null)}
+          handleDownload={handleDownload}
+          handleAssignChange={handleAssignChange}
+          onUpdateInvoice={onUpdateInvoice}
+          onDeleteInvoice={onDeleteInvoice}
+          handleAgentFileSelect={handleAgentFileSelect}
+          handleMarkComplete={handleMarkComplete}
+        />
+      )}
 
       {/* New Invoice Modal */}
       {isModalOpen && (

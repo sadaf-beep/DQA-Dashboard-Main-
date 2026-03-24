@@ -244,7 +244,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ tasks, users, currentUser
        )}
 
        <div className="flex-1 min-h-[500px]">
-          <DashboardTracker tasks={tasks} users={users} onUpdateTask={onUpdateTask} onDeleteTasks={onDeleteTasks} />
+          <DashboardTracker tasks={tasks} users={users} currentUser={currentUser} onUpdateTask={onUpdateTask} onDeleteTasks={onDeleteTasks} />
        </div>
 
        {activeEscalation && (
