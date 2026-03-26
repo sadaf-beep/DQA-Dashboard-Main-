@@ -17,14 +17,6 @@ interface TaskBoardProps {
   onCloseEscalation?: (escalation: Escalation) => void; 
 }
 
-const AVAILABLE_TAGS = [
-  '404 Error',
-  'Invoice Processing',
-  'Item Classification',
-  'Price Information',
-  'Data Refresher'
-];
-
 const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddTask, onUpdateTask, onDeleteTask, onEscalateTask, escalations = [], onResolveEscalation, onCloseEscalation }) => {
   const [filter, setFilter] = useState<'ALL' | 'MY_TASKS'>('ALL');
   
@@ -32,11 +24,11 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDesc, setNewTaskDesc] = useState('');
-  const [newTaskAssignee, setNewTaskAssignee] = useState(currentUser.id);
+  const [newTaskAssignees, setNewTaskAssignees] = useState<string[]>([currentUser.id]);
   const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>(TaskPriority.MEDIUM);
   const [newTaskType, setNewTaskType] = useState<TaskType>(TaskType.AUGMENTING);
+  const [newTaskCustomType, setNewTaskCustomType] = useState('');
   const [newTaskDate, setNewTaskDate] = useState('');
-  const [newTaskTags, setNewTaskTags] = useState<string[]>([]);
   const [newTaskAttachments, setNewTaskAttachments] = useState<TaskAttachment[]>([]);
 
   // Detail/Edit Modal State
@@ -75,7 +67,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
   // Filtering Logic: Agents can now see all tasks, but UI restricts editing.
   const filteredTasks = tasks.filter(t => {
     if (t.hiddenFromBoard) return false;
-    return filter === 'ALL' || t.assigneeId === currentUser.id;
+    return filter === 'ALL' || t.assigneeIds.includes(currentUser.id);
   });
 
   const columns = [
@@ -91,6 +83,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
       case TaskType.INVOICE_PROCESSING: return 'bg-blue-100 text-blue-700 border-blue-200';
       case TaskType.CHECK_404: return 'bg-rose-100 text-rose-700 border-rose-200';
       case TaskType.DATA_REFRESHER: return 'bg-cyan-100 text-cyan-700 border-cyan-200';
+      case TaskType.OTHERS: return 'bg-gray-100 text-gray-700 border-gray-200';
       default: return 'bg-slate-100 text-slate-700 border-slate-200';
     }
   };
@@ -112,6 +105,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
       case TaskType.CHECK_404: return '404 Check';
       case TaskType.INVOICE_PROCESSING: return 'Invoice';
       case TaskType.DATA_REFRESHER: return 'Data Refresh';
+      case TaskType.OTHERS: return 'Others';
       default: return t;
     }
   };
@@ -130,11 +124,11 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
     onAddTask({
       title: newTaskTitle,
       description: newTaskDesc,
-      assigneeId: newTaskAssignee,
+      assigneeIds: newTaskAssignees,
       priority: newTaskPriority,
       type: newTaskType,
+      customType: newTaskType === TaskType.OTHERS ? newTaskCustomType : undefined,
       status: TaskStatus.TODO,
-      tags: newTaskTags,
       dueDate: newTaskDate || new Date().toISOString(),
       notes: [],
       attachments: newTaskAttachments 
@@ -147,14 +141,10 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
     setNewTaskTitle('');
     setNewTaskDesc('');
     setNewTaskAttachments([]);
-    setNewTaskTags([]);
+    setNewTaskAssignees([currentUser.id]);
     setNewTaskDate('');
-  };
-
-  const toggleTag = (tag: string) => {
-    setNewTaskTags(prev => 
-      prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
-    );
+    setNewTaskType(TaskType.AUGMENTING);
+    setNewTaskCustomType('');
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -310,7 +300,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
   const hasActiveEscalations = activeEscalations.length > 0;
 
   // Determine if current user can edit the selected task
-  const canEditTask = selectedTask ? (currentUser.role === UserRole.MANAGER || selectedTask.assigneeId === currentUser.id) : false;
+  const canEditTask = selectedTask ? (currentUser.role === UserRole.MANAGER || selectedTask.assigneeIds.includes(currentUser.id)) : false;
 
   return (
     <div className="h-full flex flex-col">
@@ -340,8 +330,14 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
           {currentUser.role === UserRole.MANAGER && (
             <button 
               onClick={() => {
-                if (window.confirm('Are you sure you want to archive all completed tasks? They will be removed from this board but kept in the Master Daily Tracker.')) {
-                  tasks.filter(t => t.status === TaskStatus.DONE && !t.hiddenFromBoard).forEach(t => {
+                if (window.confirm('Are you sure you want to archive completed tasks older than 7 days? They will be removed from this board but kept in the Master Daily Tracker.')) {
+                  const now = Date.now();
+                  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+                  tasks.filter(t => 
+                    t.status === TaskStatus.DONE && 
+                    !t.hiddenFromBoard && 
+                    (now - t.createdAt) > SEVEN_DAYS_MS
+                  ).forEach(t => {
                     onUpdateTask({ ...t, hiddenFromBoard: true });
                   });
                 }
@@ -383,7 +379,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
                 {/* Scrollable Task List */}
                 <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
                   {columnTasks.map(task => {
-                    const assignee = users.find(u => u.id === task.assigneeId);
+                    const assignees = task.assigneeIds.map(id => users.find(u => u.id === id)).filter(Boolean) as User[];
                     const isOverdue = new Date(task.dueDate) < new Date();
                     
                     return (
@@ -396,13 +392,8 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
                         <div className="flex justify-between items-start mb-3">
                            <div className="flex gap-2 flex-wrap">
                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wider uppercase border ${getTypeStyles(task.type)}`}>
-                               {getTypeLabel(task.type)}
+                               {task.type === TaskType.OTHERS && task.customType ? task.customType : getTypeLabel(task.type)}
                              </span>
-                             {task.tags?.map(tag => (
-                               <span key={tag} className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
-                                 {tag}
-                               </span>
-                             ))}
                              {task.status === TaskStatus.ON_HOLD && (
                                 <span className="bg-amber-100 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-md border border-amber-200">
                                   ON HOLD
@@ -444,14 +435,25 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
                         {/* Footer Info */}
                         <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-50">
                           <div className="flex items-center gap-2">
-                            {assignee?.avatar ? (
-                               <img src={assignee.avatar} alt={assignee.name} className="w-6 h-6 rounded-full border border-slate-200" />
-                            ) : (
-                               <div className="w-6 h-6 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-500">
-                                 {assignee?.name.charAt(0) || '?'}
-                               </div>
-                            )}
-                            <span className="text-xs text-slate-500 font-medium truncate max-w-[80px]">{assignee?.name || 'Unassigned'}</span>
+                            <div className="flex -space-x-2">
+                              {assignees.slice(0, 3).map(assignee => (
+                                assignee.avatar ? (
+                                  <img key={assignee.id} src={assignee.avatar} alt={assignee.name} className="w-6 h-6 rounded-full border border-white" title={assignee.name} />
+                                ) : (
+                                  <div key={assignee.id} className="w-6 h-6 rounded-full bg-slate-100 border border-white flex items-center justify-center text-[10px] font-bold text-slate-500" title={assignee.name}>
+                                    {assignee.name.charAt(0)}
+                                  </div>
+                                )
+                              ))}
+                              {assignees.length > 3 && (
+                                <div className="w-6 h-6 rounded-full bg-slate-100 border border-white flex items-center justify-center text-[10px] font-bold text-slate-500">
+                                  +{assignees.length - 3}
+                                </div>
+                              )}
+                            </div>
+                            <span className="text-xs text-slate-500 font-medium truncate max-w-[80px]">
+                              {assignees.length > 0 ? (assignees.length === 1 ? assignees[0].name : `${assignees.length} agents`) : 'Unassigned'}
+                            </span>
                           </div>
                           
                           <div className="flex items-center gap-3">
@@ -490,15 +492,10 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
               <div className="flex-1 flex flex-col overflow-y-auto border-r border-slate-100">
                  {/* Header */}
                  <div className="p-8 border-b border-slate-100">
-                    <div className="flex flex-wrap gap-2 mb-4">
+                     <div className="flex flex-wrap gap-2 mb-4">
                        <span className={`px-2.5 py-1 rounded-md text-xs font-bold tracking-wider border ${getTypeStyles(selectedTask.type)}`}>
-                          {getTypeLabel(selectedTask.type)}
+                          {selectedTask.type === TaskType.OTHERS && selectedTask.customType ? selectedTask.customType : getTypeLabel(selectedTask.type)}
                        </span>
-                       {selectedTask.tags?.map(tag => (
-                          <span key={tag} className="px-2.5 py-1 rounded-md text-xs font-bold tracking-wider bg-slate-100 text-slate-600 border border-slate-200">
-                            {tag}
-                          </span>
-                       ))}
                        {hasActiveEscalations && (
                           <span className="bg-red-500 text-white px-2.5 py-1 rounded-md text-xs font-bold tracking-wider animate-pulse shadow-md shadow-red-500/30">
                               ESCALATED
@@ -633,26 +630,76 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
                         </div>
                     )}
 
-                    {/* Details Grid */}
+                     {/* Details Grid */}
                     <div className="space-y-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
                         <div>
-                           <label className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1 block">Assignee</label>
-                           <div className="flex items-center gap-2">
-                              {users.find(u => u.id === selectedTask.assigneeId)?.avatar ? (
-                                <img src={users.find(u => u.id === selectedTask.assigneeId)?.avatar} className="w-6 h-6 rounded-full"/>
-                              ) : (
-                                <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-xs">{users.find(u => u.id === selectedTask.assigneeId)?.name.charAt(0) || '?'}</div>
-                              )}
-                              <span className="text-sm font-medium text-slate-700">{users.find(u => u.id === selectedTask.assigneeId)?.name || 'Unassigned'}</span>
-                           </div>
+                           <label className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1 block">Assignees</label>
+                           {currentUser.role === UserRole.MANAGER && canEditTask ? (
+                               <div className="w-full border border-slate-300 rounded-lg px-2 py-1 h-24 overflow-y-auto bg-white space-y-1">
+                                 {users.map(u => (
+                                   <label key={u.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-1 rounded">
+                                     <input 
+                                       type="checkbox" 
+                                       className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                       checked={selectedTask.assigneeIds.includes(u.id)}
+                                       onChange={(e) => {
+                                         let newAssignees = [...selectedTask.assigneeIds];
+                                         if (e.target.checked) {
+                                           newAssignees.push(u.id);
+                                         } else {
+                                           newAssignees = newAssignees.filter(id => id !== u.id);
+                                         }
+                                         const updatedTask = { ...selectedTask, assigneeIds: newAssignees };
+                                         onUpdateTask(updatedTask);
+                                         setSelectedTask(updatedTask);
+                                       }}
+                                     />
+                                     <span className="text-sm text-slate-700">{u.name}</span>
+                                   </label>
+                                 ))}
+                               </div>
+                           ) : (
+                               <div className="flex flex-col gap-2">
+                                  {selectedTask.assigneeIds.map(id => {
+                                    const u = users.find(user => user.id === id);
+                                    if (!u) return null;
+                                    return (
+                                      <div key={u.id} className="flex items-center gap-2">
+                                        {u.avatar ? (
+                                          <img src={u.avatar} className="w-6 h-6 rounded-full"/>
+                                        ) : (
+                                          <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-xs">{u.name.charAt(0)}</div>
+                                        )}
+                                        <span className="text-sm font-medium text-slate-700">{u.name}</span>
+                                      </div>
+                                    );
+                                  })}
+                                  {selectedTask.assigneeIds.length === 0 && (
+                                    <span className="text-sm font-medium text-slate-700">Unassigned</span>
+                                  )}
+                               </div>
+                           )}
                         </div>
                         <div className="h-px bg-slate-100 my-2"></div>
                         <div>
                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1 block">Due Date</label>
-                           <div className="flex items-center gap-2 text-slate-700 text-sm">
-                              <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                              {new Date(selectedTask.dueDate).toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'long', day: 'numeric' })}
-                           </div>
+                           {currentUser.role === UserRole.MANAGER && canEditTask ? (
+                               <input 
+                                 type="date" 
+                                 className="w-full border border-slate-300 rounded-lg px-2 py-1 text-sm" 
+                                 value={selectedTask.dueDate.split('T')[0]} 
+                                 onChange={e => {
+                                   const updatedTask = { ...selectedTask, dueDate: e.target.value };
+                                   onUpdateTask(updatedTask);
+                                   setSelectedTask(updatedTask);
+                                 }}
+                               />
+                           ) : (
+                               <div className="flex items-center gap-2 text-slate-700 text-sm">
+                                  <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                  {new Date(selectedTask.dueDate).toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'long', day: 'numeric' })}
+                               </div>
+                           )}
                         </div>
                          <div className="h-px bg-slate-100 my-2"></div>
                         <div>
@@ -663,22 +710,6 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
                            }`}>
                               {selectedTask.priority}
                            </span>
-                        </div>
-                         <div className="h-px bg-slate-100 my-2"></div>
-                        {/* Tags in details */}
-                        <div>
-                           <label className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1 block">Tags</label>
-                           {selectedTask.tags && selectedTask.tags.length > 0 ? (
-                               <div className="flex flex-wrap gap-1">
-                                   {selectedTask.tags.map(tag => (
-                                       <span key={tag} className="px-2 py-0.5 rounded-md text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">
-                                           {tag}
-                                       </span>
-                                   ))}
-                               </div>
-                           ) : (
-                               <span className="text-sm text-slate-400 italic">No tags</span>
-                           )}
                         </div>
                     </div>
 
@@ -868,6 +899,16 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
                    <select className="w-full border border-slate-300 rounded-lg px-3 py-2" value={newTaskType} onChange={e => setNewTaskType(e.target.value as TaskType)}>
                      {Object.values(TaskType).map(t => <option key={t} value={t}>{getTypeLabel(t)}</option>)}
                    </select>
+                   {newTaskType === TaskType.OTHERS && (
+                     <input 
+                       type="text" 
+                       placeholder="Specify task type" 
+                       className="w-full border border-slate-300 rounded-lg px-3 py-2 mt-2 focus:ring-2 focus:ring-blue-500 outline-none" 
+                       value={newTaskCustomType} 
+                       onChange={e => setNewTaskCustomType(e.target.value)} 
+                       required
+                     />
+                   )}
                 </div>
                 <div>
                    <label className="block text-sm font-semibold text-slate-700 mb-1">Priority</label>
@@ -881,34 +922,29 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
                 <label className="block text-sm font-semibold text-slate-700 mb-1">Description</label>
                 <textarea className="w-full border border-slate-300 rounded-lg px-3 py-2 h-24 resize-none focus:ring-2 focus:ring-blue-500 outline-none" value={newTaskDesc} onChange={e => setNewTaskDesc(e.target.value)} />
               </div>
-              
-              {/* Tags Selector */}
-              <div>
-                 <label className="block text-sm font-semibold text-slate-700 mb-2">Tags</label>
-                 <div className="flex flex-wrap gap-2">
-                   {AVAILABLE_TAGS.map(tag => (
-                     <button
-                       type="button"
-                       key={tag}
-                       onClick={() => toggleTag(tag)}
-                       className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                         newTaskTags.includes(tag) 
-                           ? 'bg-blue-100 text-blue-700 border-blue-200' 
-                           : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
-                       }`}
-                     >
-                       {tag}
-                     </button>
-                   ))}
-                 </div>
-              </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                   <label className="block text-sm font-semibold text-slate-700 mb-1">Assignee</label>
-                   <select className="w-full border border-slate-300 rounded-lg px-3 py-2" value={newTaskAssignee} onChange={e => setNewTaskAssignee(e.target.value)}>
-                     {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                   </select>
+                   <label className="block text-sm font-semibold text-slate-700 mb-1">Assignees</label>
+                   <div className="w-full border border-slate-300 rounded-lg px-3 py-2 h-24 overflow-y-auto bg-white space-y-1">
+                     {users.map(u => (
+                       <label key={u.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-1 rounded">
+                         <input 
+                           type="checkbox" 
+                           className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                           checked={newTaskAssignees.includes(u.id)}
+                           onChange={(e) => {
+                             if (e.target.checked) {
+                               setNewTaskAssignees([...newTaskAssignees, u.id]);
+                             } else {
+                               setNewTaskAssignees(newTaskAssignees.filter(id => id !== u.id));
+                             }
+                           }}
+                         />
+                         <span className="text-sm text-slate-700">{u.name}</span>
+                       </label>
+                     ))}
+                   </div>
                 </div>
                 <div>
                    <label className="block text-sm font-semibold text-slate-700 mb-1">Due Date</label>

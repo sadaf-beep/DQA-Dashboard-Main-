@@ -46,7 +46,8 @@ export enum TaskType {
   QA = 'QA',
   CHECK_404 = '404_CHECK',
   INVOICE_PROCESSING = 'INVOICE_PROCESSING',
-  DATA_REFRESHER = 'DATA_REFRESHER'
+  DATA_REFRESHER = 'DATA_REFRESHER',
+  OTHERS = 'OTHERS'
 }
 
 export interface TaskNote {
@@ -67,11 +68,11 @@ export interface Task {
   id: string;
   title: string;
   description: string;
-  assigneeId: string; // User ID
+  assigneeIds: string[]; // Array of User IDs
   status: TaskStatus;
   priority: TaskPriority;
   type: TaskType;
-  tags?: string[]; // Added tags support
+  customType?: string; // For 'OTHERS' task type
   dueDate: string;
   createdAt: number;
   completedAt?: number; // Added for turnaround time calculation

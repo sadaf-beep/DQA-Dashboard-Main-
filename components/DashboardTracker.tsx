@@ -53,8 +53,8 @@ const DashboardTracker: React.FC<DashboardTrackerProps> = ({ tasks, users, curre
   // Helper to determine Category (Trial vs Paid vs Invoice)
   const getCategory = (task: Task) => {
     if (task.type === TaskType.INVOICE_PROCESSING) return 'Invoice';
-    // Logic: If tag contains "Trial" or title contains "Trial", it's Trial Studio
-    if (task.title.toLowerCase().includes('trial') || (task.tags && task.tags.some(t => t.toLowerCase().includes('trial')))) return 'Trial Studio';
+    // Logic: If title contains "Trial", it's Trial Studio
+    if (task.title.toLowerCase().includes('trial')) return 'Trial Studio';
     return 'Paid Studio'; 
   };
 
@@ -123,8 +123,10 @@ const DashboardTracker: React.FC<DashboardTrackerProps> = ({ tasks, users, curre
   const handleAssigneeChange = (row: TrackerRow, newAssigneeId: string) => {
     // Assign all tasks in group to the new single assignee
     row.originalTasks.forEach(task => {
-        if (task.assigneeId !== newAssigneeId) {
-            onUpdateTask({ ...task, assigneeId: newAssigneeId });
+        const newAssigneeIds = newAssigneeId ? [newAssigneeId] : [];
+        // Only update if the assigneeIds array is different
+        if (JSON.stringify(task.assigneeIds) !== JSON.stringify(newAssigneeIds)) {
+            onUpdateTask({ ...task, assigneeIds: newAssigneeIds });
         }
     });
   };
@@ -148,7 +150,7 @@ const DashboardTracker: React.FC<DashboardTrackerProps> = ({ tasks, users, curre
         const primary = groupTasks[0]; // Representative task
 
         // Collect Assignees
-        const assigneeIds = Array.from(new Set(groupTasks.map(t => t.assigneeId).filter(Boolean)));
+        const assigneeIds = Array.from(new Set(groupTasks.flatMap(t => t.assigneeIds).filter(Boolean)));
 
         // Composite Status Logic
         let compositeStatus = TaskStatus.TODO;
@@ -220,11 +222,7 @@ const DashboardTracker: React.FC<DashboardTrackerProps> = ({ tasks, users, curre
     }
   };
 
-  const handleDownloadAndReset = () => {
-    if (!window.confirm("Are you sure you want to download the current tracker data and permanently delete all these tasks from the database? This action cannot be undone.")) {
-      return;
-    }
-
+  const handleDownload = () => {
     // 1. Generate CSV
     const headers = ['Date Created', 'Category', 'Studio/Project', 'Task Name', 'Status', 'Priority', 'Assigned To', 'Due Date'];
     const csvRows = [headers.join(',')];
@@ -256,8 +254,80 @@ const DashboardTracker: React.FC<DashboardTrackerProps> = ({ tasks, users, curre
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
 
-    // 2. Delete all tasks in the tracker
+  const handleRestoreData = async () => {
+    if (!window.confirm("Are you sure you want to restore the historical task data? This will add 24 tasks back to the database.")) {
+      return;
+    }
+
+    const csvData = [
+      ["3/25/2026","Paid Studio","SCG Process Inc","Augmenting","IN_PROGRESS","HIGH","Simran Agarwal; Ahnaf Tahmid","3/26/2026"],
+      ["3/25/2026","Paid Studio","Lenovo","QA Review & Augmenting","IN_PROGRESS","HIGH","Riad Mostofa; Fariha Elahee ","3/26/2026"],
+      ["3/25/2026","Paid Studio","Amazon","QA Review & Augmenting","IN_PROGRESS","HIGH","Fariha Elahee ; Ahnaf Tahmid","3/26/2026"],
+      ["3/25/2026","Paid Studio","ASG","QA Review & Augmenting","DONE","HIGH","Ahnaf Tahmid; Riad Mostofa","3/26/2026"],
+      ["3/23/2026","Paid Studio","diversifed qa last","QA Review","DONE","HIGH","Simran Agarwal","3/23/2026"],
+      ["3/18/2026","Paid Studio","TVA QA ","QA Review","DONE","CRITICAL","Ahnaf Tahmid","3/18/2026"],
+      ["3/18/2026","Paid Studio","Augment Plus QA Diversified ","QA Review","DONE","CRITICAL","Fariha Elahee ","3/18/2026"],
+      ["3/16/2026","Paid Studio","QA TVA","QA Review","DONE","CRITICAL","Simran Agarwal","3/17/2026"],
+      ["3/16/2026","Paid Studio","mobile tv (2)","QA Review","DONE","HIGH","Fariha Elahee ","3/16/2026"],
+      ["3/13/2026","Paid Studio","Mobile TV","Augmenting","DONE","HIGH","Ahnaf Tahmid","3/13/2026"],
+      ["3/13/2026","Paid Studio","Image URL","404 CHECK","DONE","CRITICAL","Simran Agarwal","3/13/2026"],
+      ["3/13/2026","Paid Studio","Replace all broken links (Product)","404 CHECK","DONE","CRITICAL","Simran Agarwal","3/12/2026"],
+      ["3/10/2026","Paid Studio","diversified ARA QA","QA Review","DONE","HIGH","Simran Agarwal; Fariha Elahee ","3/11/2026"],
+      ["3/10/2026","Paid Studio","diversified AS QA","QA Review","DONE","HIGH","Fariha Elahee ; Ahnaf Tahmid; Riad Mostofa","3/11/2026"],
+      ["3/9/2026","Paid Studio","Prestonwood","QA Review & Augmenting","DONE","HIGH","Ahnaf Tahmid; Simran Agarwal","3/13/2026"],
+      ["3/9/2026","Paid Studio","aurbun uni","QA Review","DONE","HIGH","Ahnaf Tahmid","3/9/2026"],
+      ["3/5/2026","Paid Studio","Auburn Uni","Augmenting & QA Review","DONE","HIGH","Fariha Elahee ; Riad Mostofa; Ahnaf Tahmid","3/5/2026"],
+      ["3/2/2026","Paid Studio","TVA 404 Image Error ","404 CHECK","DONE","HIGH","Fariha Elahee ","3/2/2026"],
+      ["2/26/2026","Paid Studio","Thumbwar (Augment)","Augmenting","DONE","HIGH","Simran Agarwal; Fariha Elahee ; Ahnaf Tahmid; Riad Mostofa","3/2/2026"],
+      ["2/25/2026","Paid Studio","ASG Final QA BATCH","QA Review","DONE","HIGH","Ahnaf Tahmid","2/25/2026"],
+      ["2/25/2026","Paid Studio","Media pro","QA Review & Augmenting","DONE","HIGH","Ahnaf Tahmid; Simran Agarwal; Riad Mostofa","3/4/2026"],
+      ["2/25/2026","Paid Studio","Diversified QA Batch 2 (AF)","QA Review","DONE","HIGH","Simran Agarwal","2/25/2026"],
+      ["2/24/2026","Paid Studio","Diversified QA Batch 1 (AA)","QA Review","DONE","HIGH","Fariha Elahee ; Simran Agarwal; Riad Mostofa","2/24/2026"],
+      ["2/11/2026","Paid Studio","ASG QA Batch 1","QA Review","DONE","HIGH","Riad Mostofa","2/12/2026"]
+    ];
+
+    for (const row of csvData) {
+      const [dateCreated, category, studio, taskName, status, priority, assignees, dueDate] = row;
+      
+      const assigneeNames = assignees.split(';').map(n => n.trim());
+      const assigneeIds = assigneeNames.map(name => {
+        const user = users.find(u => u.name.toLowerCase().includes(name.toLowerCase()));
+        return user ? user.id : null;
+      }).filter(Boolean) as string[];
+
+      let type = TaskType.OTHERS;
+      let customType = taskName;
+      if (taskName.toLowerCase().includes('augmenting')) type = TaskType.AUGMENTING;
+      if (taskName.toLowerCase().includes('qa review')) type = TaskType.QA;
+      if (taskName.toLowerCase().includes('404 check')) type = TaskType.CHECK_404;
+
+      const newTask: Task = {
+        id: `restored-${btoa(studio + taskName + dateCreated).replace(/[^a-z0-9]/gi, '').substr(0, 20)}`,
+        title: `${studio} - ${taskName}`,
+        description: `Restored task for ${studio}`,
+        assigneeIds,
+        status: status as TaskStatus,
+        priority: priority as TaskPriority,
+        type,
+        customType,
+        dueDate: dueDate ? new Date(dueDate).toISOString() : new Date().toISOString(),
+        createdAt: new Date(dateCreated).getTime(),
+        hiddenFromBoard: true
+      };
+
+      onUpdateTask(newTask); // Using onUpdateTask to add/upsert
+    }
+    alert("Data restoration complete!");
+  };
+
+  const handleReset = () => {
+    if (!window.confirm("Are you sure you want to permanently delete all these tasks from the database? This action cannot be undone. Please ensure you have downloaded the tracker first if needed.")) {
+      return;
+    }
+
+    // Delete all tasks in the tracker
     const allTaskIds = tableData.flatMap(row => row.originalTasks.map(t => t.id));
     onDeleteTasks(allTaskIds);
   };
@@ -276,14 +346,32 @@ const DashboardTracker: React.FC<DashboardTrackerProps> = ({ tasks, users, curre
                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-100 border border-purple-200"></span> Invoice</span>
           </div>
           {currentUser.role === UserRole.MANAGER && (
-            <button
-              onClick={handleDownloadAndReset}
-              className="px-3 py-1.5 text-xs font-bold bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors flex items-center gap-1"
-              title="Download CSV and delete tasks from database"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-              Download & Reset
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleRestoreData}
+                className="px-3 py-1.5 text-xs font-bold bg-amber-500 text-white rounded hover:bg-amber-600 transition-colors flex items-center gap-1"
+                title="Restore accidental deletions"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                Restore Data
+              </button>
+              <button
+                onClick={handleDownload}
+                className="px-3 py-1.5 text-xs font-bold bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors flex items-center gap-1"
+                title="Download CSV"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                Download
+              </button>
+              <button
+                onClick={handleReset}
+                className="px-3 py-1.5 text-xs font-bold bg-red-600 text-white rounded hover:bg-red-700 transition-colors flex items-center gap-1"
+                title="Reset Dashboard (Permanently delete tasks)"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                Reset
+              </button>
+            </div>
           )}
         </div>
       </div>

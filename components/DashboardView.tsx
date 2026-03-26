@@ -46,20 +46,22 @@ const DashboardView: React.FC<DashboardViewProps> = ({ tasks, users, currentUser
       stats[u.id] = { totalTasks: 0, activeTasks: 0, productsProcessed: 0, avgTurnaround: 0 };
     });
     tasks.forEach(t => {
-      if (stats[t.assigneeId]) {
-        if (t.status === TaskStatus.DONE) {
-            stats[t.assigneeId].totalTasks++;
-            if (t.completedAt && t.createdAt) {
-                const currentAvg = stats[t.assigneeId].avgTurnaround;
-                const count = stats[t.assigneeId].totalTasks;
-                const durationHours = (t.completedAt - t.createdAt) / 3600000;
-                if (count === 1) stats[t.assigneeId].avgTurnaround = durationHours;
-                else stats[t.assigneeId].avgTurnaround = ((currentAvg * (count - 1)) + durationHours) / count;
-            }
-        } else {
-            stats[t.assigneeId].activeTasks++;
+      t.assigneeIds.forEach(assigneeId => {
+        if (stats[assigneeId]) {
+          if (t.status === TaskStatus.DONE) {
+              stats[assigneeId].totalTasks++;
+              if (t.completedAt && t.createdAt) {
+                  const currentAvg = stats[assigneeId].avgTurnaround;
+                  const count = stats[assigneeId].totalTasks;
+                  const durationHours = (t.completedAt - t.createdAt) / 3600000;
+                  if (count === 1) stats[assigneeId].avgTurnaround = durationHours;
+                  else stats[assigneeId].avgTurnaround = ((currentAvg * (count - 1)) + durationHours) / count;
+              }
+          } else {
+              stats[assigneeId].activeTasks++;
+          }
         }
-      }
+      });
     });
     inventories.forEach(inv => {
       inv.data.forEach(item => {

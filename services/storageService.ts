@@ -1,6 +1,6 @@
 
 import { createClient, RealtimeChannel } from '@supabase/supabase-js';
-import { Task, InventoryFile, User, InventoryItem, Invoice, Escalation, UserRole, TaskStatus, TaskPriority, TaskType } from '../types';
+import { Task, InventoryFile, User, InventoryItem, Invoice, Escalation, UserRole, TaskStatus, TaskPriority, TaskType, LeaveRequest } from '../types';
 import { MOCK_USERS } from '../constants';
 
 // --- SUPABASE CONFIGURATION ---
@@ -41,34 +41,50 @@ const mapUserToDB = (user: User) => ({
   password: user.password
 });
 
-const mapTaskFromDB = (row: any): Task => ({
-  id: row.id,
-  title: row.title,
-  description: row.description,
-  assigneeId: row.assignee_id,
-  status: row.status as TaskStatus,
-  priority: row.priority as TaskPriority,
-  type: row.type as TaskType,
-  tags: row.tags || [],
-  dueDate: row.due_date,
-  createdAt: Number(row.created_at),
-  completedAt: row.completed_at ? Number(row.completed_at) : undefined,
-  notes: row.notes || [],
-  attachments: row.attachments || [],
-  inventoryFileId: row.inventory_file_id,
-  inventoryItemIds: row.inventory_item_ids,
-  isEscalated: row.is_escalated
-});
+const mapTaskFromDB = (row: any): Task => {
+  let assigneeIds = [row.assignee_id].filter(Boolean);
+  let customType = undefined;
+
+  if (row.tags && row.tags.length > 0) {
+    try {
+      const parsed = JSON.parse(row.tags[0]);
+      if (parsed.assigneeIds) assigneeIds = parsed.assigneeIds;
+      if (parsed.customType) customType = parsed.customType;
+    } catch (e) {
+      // Not a JSON string, ignore
+    }
+  }
+
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    assigneeIds,
+    status: row.status as TaskStatus,
+    priority: row.priority as TaskPriority,
+    type: row.type as TaskType,
+    customType,
+    dueDate: row.due_date,
+    createdAt: Number(row.created_at),
+    completedAt: row.completed_at ? Number(row.completed_at) : undefined,
+    notes: row.notes || [],
+    attachments: row.attachments || [],
+    inventoryFileId: row.inventory_file_id,
+    inventoryItemIds: row.inventory_item_ids,
+    isEscalated: row.is_escalated,
+    hiddenFromBoard: row.hidden_from_board
+  };
+};
 
 const mapTaskToDB = (task: Task) => ({
   id: task.id,
   title: task.title,
   description: task.description,
-  assignee_id: task.assigneeId,
+  assignee_id: task.assigneeIds[0] || null, // Keep for backwards compatibility if needed
+  tags: [JSON.stringify({ assigneeIds: task.assigneeIds, customType: task.customType })],
   status: task.status,
   priority: task.priority,
   type: task.type,
-  tags: task.tags,
   due_date: task.dueDate,
   created_at: task.createdAt,
   completed_at: task.completedAt,
@@ -76,7 +92,8 @@ const mapTaskToDB = (task: Task) => ({
   attachments: task.attachments,
   inventory_file_id: task.inventoryFileId,
   inventory_item_ids: task.inventoryItemIds,
-  is_escalated: task.isEscalated
+  is_escalated: task.isEscalated,
+  hidden_from_board: task.hiddenFromBoard
 });
 
 const mapInventoryFromDB = (row: any): InventoryFile => ({
@@ -293,11 +310,13 @@ export const storageService = {
   },
 
   addTask: async (task: Task) => {
-    await supabase.from('tasks').insert(mapTaskToDB(task));
+    const { error } = await supabase.from('tasks').insert(mapTaskToDB(task));
+    if (error) console.error("Error adding task:", error);
   },
 
   updateTask: async (task: Task) => {
-    await supabase.from('tasks').upsert(mapTaskToDB(task));
+    const { error } = await supabase.from('tasks').upsert(mapTaskToDB(task));
+    if (error) console.error("Error updating task:", error);
   },
 
   deleteTask: async (id: string) => {

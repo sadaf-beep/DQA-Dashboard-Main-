@@ -10,7 +10,7 @@ import AgentManagement from './components/AgentManagement';
 import ProfileSettings from './components/ProfileSettings';
 import Login from './components/Login';
 import NotificationToast from './components/NotificationToast'; // New Component
-import { User, Task, InventoryFile, UserRole, Notification, Invoice, Escalation, EscalationMessage, TaskStatus, TaskType, InventoryStatus, TaskPriority, InventoryItem } from './types';
+import { User, Task, InventoryFile, UserRole, Notification, Invoice, Escalation, EscalationMessage, TaskStatus, TaskType, InventoryStatus, TaskPriority, InventoryItem, LeaveRequest } from './types';
 import { storageService } from './services/storageService';
 
 // Audio Context Singleton
@@ -219,14 +219,14 @@ const App: React.FC = () => {
         // A) New Task Assigned
         if (!oldTask) {
             // If I am the assignee OR I am a manager (monitor all)
-            if (newTask.assigneeId === currentUser.id || currentUser.role === UserRole.MANAGER) {
-                addNotification("New Task Assigned", `Task "${newTask.title}" assigned to ${users.find(u=>u.id===newTask.assigneeId)?.name || 'someone'}.`, true);
+            if (newTask.assigneeIds.includes(currentUser.id) || currentUser.role === UserRole.MANAGER) {
+                addNotification("New Task Assigned", `Task "${newTask.title}" assigned to ${users.find(u=>newTask.assigneeIds.includes(u.id))?.name || 'someone'}.`, true);
             }
         } 
         // B) Status Change
         else if (oldTask.status !== newTask.status) {
             // Notify if I am assignee, I am manager, OR I was the assignee
-            if (newTask.assigneeId === currentUser.id || currentUser.role === UserRole.MANAGER) {
+            if (newTask.assigneeIds.includes(currentUser.id) || currentUser.role === UserRole.MANAGER) {
                 const isComplete = newTask.status === TaskStatus.DONE;
                 addNotification(
                     isComplete ? "Task Completed" : "Task Updated", 
@@ -413,7 +413,7 @@ const App: React.FC = () => {
         storageService.updateTask({ ...t, hiddenFromBoard: true });
       });
     }
-  }, [tasks.length]);
+  }, [tasks]);
 
   const handleTaskUpdate = (updatedTask: Task) => {
     storageService.updateTask(updatedTask);
@@ -431,7 +431,7 @@ const App: React.FC = () => {
     if (task) {
       const updatedTask = { ...task, hiddenFromBoard: true };
       setTasks(prev => prev.map(t => t.id === taskId ? updatedTask : t));
-      storageService.saveTask(updatedTask);
+      storageService.updateTask(updatedTask);
     }
   };
 
@@ -463,13 +463,12 @@ const App: React.FC = () => {
       id: `task-${newInvoice.id}`,
       title: `Process Invoice: ${newInvoice.referenceName}`,
       description: `Invoice processing task created for ${newInvoice.referenceName}. Link to invoice ID: ${newInvoice.id}`,
-      assigneeId: newInvoice.assigneeId || '',
+      assigneeIds: newInvoice.assigneeId ? [newInvoice.assigneeId] : [],
       status: TaskStatus.TODO,
       priority: TaskPriority.MEDIUM,
       type: TaskType.INVOICE_PROCESSING,
       dueDate: newInvoice.dueDate || new Date(Date.now() + 3 * 86400000).toISOString(),
       createdAt: Date.now(),
-      tags: ['Invoice', 'Administrative'],
       attachments: [{ name: newInvoice.pdfFile.name, type: 'pdf', url: '#' }]
     };
     storageService.addTask(newTask);
@@ -484,7 +483,7 @@ const App: React.FC = () => {
     if (linkedTask) {
         const newTaskState = {
             ...linkedTask,
-            assigneeId: updatedInvoice.assigneeId || linkedTask.assigneeId,
+            assigneeIds: updatedInvoice.assigneeId ? [updatedInvoice.assigneeId] : linkedTask.assigneeIds,
             dueDate: updatedInvoice.dueDate || linkedTask.dueDate,
             status: (updatedInvoice.status === 'COMPLETED' || updatedInvoice.status === 'UPLOADED') ? TaskStatus.DONE : linkedTask.status
         };
@@ -498,13 +497,12 @@ const App: React.FC = () => {
                 id: `task-mgr-${updatedInvoice.id}`,
                 title: `Upload to Beam: ${updatedInvoice.referenceName}`,
                 description: `The invoice ${updatedInvoice.referenceName} has been processed by the agent. Please upload the final deliverable to Beam Dynamics and confirm in the Studio Invoice tab.`,
-                assigneeId: manager.id,
+                assigneeIds: [manager.id],
                 status: TaskStatus.TODO,
                 priority: TaskPriority.HIGH,
                 type: TaskType.INVOICE_PROCESSING,
                 dueDate: new Date(Date.now() + 86400000).toISOString(),
                 createdAt: Date.now(),
-                tags: ['Manager Action', 'Upload', 'Invoice'],
                 attachments: updatedInvoice.finalCsvFile ? [{ name: updatedInvoice.finalCsvFile.name, type: 'csv', url: '#' }] : []
              };
              storageService.addTask(managerTask);
