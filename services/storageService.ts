@@ -80,8 +80,8 @@ const mapTaskToDB = (task: Task) => ({
   id: task.id,
   title: task.title,
   description: task.description,
-  assignee_id: task.assigneeIds[0] || null, // Keep for backwards compatibility if needed
-  tags: [JSON.stringify({ assigneeIds: task.assigneeIds, customType: task.customType })],
+  assignee_id: (task.assigneeIds && task.assigneeIds[0]) || null, // Keep for backwards compatibility if needed
+  tags: [JSON.stringify({ assigneeIds: task.assigneeIds || [], customType: task.customType })],
   status: task.status,
   priority: task.priority,
   type: task.type,

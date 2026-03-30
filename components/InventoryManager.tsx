@@ -277,7 +277,7 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ inventories, curren
     onAddTask({
       title: `${assignType === 'AUGMENTATION' ? 'Augment' : 'QA Review'} ${selectedCount} products in ${activeInventory.fileName}`,
       description: `Automated task for processing ${selectedCount} items from studio file: ${activeInventory.fileName}.`,
-      assigneeId: selectedAssignee,
+      assigneeIds: [selectedAssignee],
       status: TaskStatus.TODO,
       priority: TaskPriority.HIGH,
       type: taskType,
@@ -285,7 +285,7 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ inventories, curren
       notes: [{ id: `note-${Date.now()}`, authorId: currentUser.id, authorName: currentUser.name, text: 'Auto-generated from inventory workflow.', timestamp: Date.now() }],
       inventoryFileId: activeInventory.id,
       inventoryItemIds: Array.from(selectedIds)
-    });
+    } as any);
 
     onUpdateItems(activeInventory.id, updatedItems);
     setSelectedIds(new Set());
