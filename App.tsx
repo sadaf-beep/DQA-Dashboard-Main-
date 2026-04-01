@@ -116,9 +116,11 @@ const App: React.FC = () => {
   const prevTasksRef = useRef<Task[]>([]);
   const prevInvoicesRef = useRef<Invoice[]>([]);
   const prevEscalationsRef = useRef<Escalation[]>([]);
+  const prevLeaveRequestsRef = useRef<LeaveRequest[]>([]);
   const initialTasksLoaded = useRef(false);
   const initialInvoicesLoaded = useRef(false);
   const initialEscalationsLoaded = useRef(false);
+  const initialLeaveLoaded = useRef(false);
   const isInitialDataLoaded = useRef(false);
 
   // --- REAL-TIME DATA SUBSCRIPTIONS ---
@@ -147,6 +149,7 @@ const App: React.FC = () => {
     });
     const unsubLeave = storageService.subscribeLeaveRequests((data) => {
         setLeaveRequests(data);
+        initialLeaveLoaded.current = true;
     });
 
     return () => {
@@ -192,12 +195,13 @@ const App: React.FC = () => {
   // --- NOTIFICATION & DETECTION LOGIC ---
   useEffect(() => {
     if (!isInitialDataLoaded.current) {
-        if (initialTasksLoaded.current && initialInvoicesLoaded.current && initialEscalationsLoaded.current) {
+        if (initialTasksLoaded.current && initialInvoicesLoaded.current && initialEscalationsLoaded.current && initialLeaveLoaded.current) {
             isInitialDataLoaded.current = true;
         }
         prevTasksRef.current = tasks;
         prevInvoicesRef.current = invoices;
         prevEscalationsRef.current = escalations;
+        prevLeaveRequestsRef.current = leaveRequests;
         return;
     }
 
@@ -205,10 +209,12 @@ const App: React.FC = () => {
     const oldTasks = prevTasksRef.current;
     const oldInvoices = prevInvoicesRef.current;
     const oldEscalations = prevEscalationsRef.current;
+    const oldLeaveRequests = prevLeaveRequestsRef.current;
 
     prevTasksRef.current = tasks;
     prevInvoicesRef.current = invoices;
     prevEscalationsRef.current = escalations;
+    prevLeaveRequestsRef.current = leaveRequests;
 
     if (!currentUser) return;
 
@@ -288,7 +294,28 @@ const App: React.FC = () => {
         }
     });
 
-  }, [tasks, invoices, escalations, currentUser, users]);
+    // 4. Detect Leave Requests
+    leaveRequests.forEach(newReq => {
+        const oldReq = oldLeaveRequests.find(r => r.id === newReq.id);
+        if (!oldReq) {
+            // New Request
+            if (currentUser.role === UserRole.MANAGER || newReq.userId === currentUser.id) {
+                const isAutoApproved = newReq.status === 'APPROVED';
+                const msg = isAutoApproved 
+                    ? `✅ Leave Auto-Approved: ${newReq.userName} (${newReq.type})`
+                    : `📅 New Leave Request: ${newReq.userName} (${newReq.type})`;
+                addNotification(isAutoApproved ? "Leave Approved" : "Leave Requested", msg, true);
+                if (currentUser.role === UserRole.MANAGER) sendToSlack(msg);
+            }
+        } else if (oldReq.status !== newReq.status) {
+            // Status changed
+            if (newReq.userId === currentUser.id || currentUser.role === UserRole.MANAGER) {
+                addNotification("Leave Status Updated", `Leave request for ${newReq.userName} is now ${newReq.status}.`, true);
+            }
+        }
+    });
+
+  }, [tasks, invoices, escalations, leaveRequests, currentUser, users]);
 
 
   // --- AUTOMATED TASK COMPLETION LOGIC ---

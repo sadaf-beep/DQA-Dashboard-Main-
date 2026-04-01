@@ -131,6 +131,24 @@ const LeaveCalendar: React.FC<LeaveCalendarProps> = ({ currentUser, users, leave
 
   const myRequests = useMemo(() => leaveRequests.filter(r => r.userId === currentUser.id).sort((a, b) => b.createdAt - a.createdAt), [leaveRequests, currentUser.id]);
   const pendingRequests = useMemo(() => leaveRequests.filter(r => r.status === 'PENDING').sort((a, b) => a.createdAt - b.createdAt), [leaveRequests]);
+  const allRequests = useMemo(() => [...leaveRequests].sort((a, b) => b.createdAt - a.createdAt), [leaveRequests]);
+
+  const [managerTab, setManagerTab] = useState<'PENDING' | 'APPROVED' | 'ALL'>('PENDING');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredRequests = useMemo(() => {
+    let base = [];
+    if (managerTab === 'PENDING') {
+      base = pendingRequests;
+    } else if (managerTab === 'APPROVED') {
+      base = leaveRequests.filter(r => r.status === 'APPROVED').sort((a, b) => b.createdAt - a.createdAt);
+    } else {
+      base = allRequests;
+    }
+    
+    if (!searchQuery) return base;
+    return base.filter(r => r.userName.toLowerCase().includes(searchQuery.toLowerCase()));
+  }, [managerTab, pendingRequests, allRequests, leaveRequests, searchQuery]);
 
   // Combined calendar items (Leaves + Holidays)
   const calendarItems = useMemo(() => {
@@ -422,17 +440,53 @@ const LeaveCalendar: React.FC<LeaveCalendarProps> = ({ currentUser, users, leave
 
         {/* Right Column: Requests / Upcoming */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
-          <div className="p-4 border-b border-slate-100 bg-slate-50">
-            <h3 className="font-bold text-slate-800">{isManager ? 'Pending Requests' : 'My Requests'}</h3>
+          <div className="p-4 border-b border-slate-100 bg-slate-50 flex flex-col gap-3">
+            <div className="flex justify-between items-center">
+              <h3 className="font-bold text-slate-800">{isManager ? 'Leave Requests' : 'My Requests'}</h3>
+              {isManager && (
+                <div className="flex bg-slate-200 p-0.5 rounded-lg">
+                  <button 
+                    onClick={() => setManagerTab('PENDING')}
+                    className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${managerTab === 'PENDING' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    Pending
+                  </button>
+                  <button 
+                    onClick={() => setManagerTab('APPROVED')}
+                    className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${managerTab === 'APPROVED' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    Approved
+                  </button>
+                  <button 
+                    onClick={() => setManagerTab('ALL')}
+                    className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${managerTab === 'ALL' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    All
+                  </button>
+                </div>
+              )}
+            </div>
+            {isManager && (
+              <div className="relative">
+                <input 
+                  type="text"
+                  placeholder="Search agent name..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none"
+                />
+                <svg className="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+              </div>
+            )}
           </div>
           <div className="flex-1 p-4 overflow-y-auto">
             {isManager ? (
-              pendingRequests.length === 0 ? (
+              filteredRequests.length === 0 ? (
                 <div className="text-center py-10 text-slate-400">
-                  <p className="text-sm">No pending requests.</p>
+                  <p className="text-sm">No requests found.</p>
                 </div>
               ) : (
-                pendingRequests.map(req => renderRequestCard(req, true))
+                filteredRequests.map(req => renderRequestCard(req, req.status === 'PENDING'))
               )
             ) : (
               myRequests.length === 0 ? (
