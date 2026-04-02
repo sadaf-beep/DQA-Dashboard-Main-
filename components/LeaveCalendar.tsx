@@ -22,7 +22,7 @@ const BD_HOLIDAYS = [
 
 const IND_HOLIDAYS = [
   { name: "New Year's Day", date: '2026-01-01' },
-  { name: 'Independence Day', date: '2026-08-14' },
+  { name: 'Independence Day', date: '2026-08-15' },
   { name: 'Diwali', date: '2026-11-09' },
 ];
 
@@ -118,6 +118,7 @@ const LeaveCalendar: React.FC<LeaveCalendarProps> = ({ currentUser, users, leave
       daysRequested: days
     };
 
+    console.log("Submitting Leave Request:", newRequest);
     onAddLeaveRequest(newRequest);
     
     // Reset form
@@ -129,11 +130,15 @@ const LeaveCalendar: React.FC<LeaveCalendarProps> = ({ currentUser, users, leave
     setIsRequestModalOpen(false);
   };
 
-  const myRequests = useMemo(() => leaveRequests.filter(r => r.userId === currentUser.id).sort((a, b) => b.createdAt - a.createdAt), [leaveRequests, currentUser.id]);
+  const myRequests = useMemo(() => {
+    const filtered = leaveRequests.filter(r => r.userId === currentUser.id).sort((a, b) => b.createdAt - a.createdAt);
+    console.log("My Leave Requests Filtered:", filtered.length, "for user:", currentUser.id);
+    return filtered;
+  }, [leaveRequests, currentUser.id]);
   const pendingRequests = useMemo(() => leaveRequests.filter(r => r.status === 'PENDING').sort((a, b) => a.createdAt - b.createdAt), [leaveRequests]);
   const allRequests = useMemo(() => [...leaveRequests].sort((a, b) => b.createdAt - a.createdAt), [leaveRequests]);
 
-  const [managerTab, setManagerTab] = useState<'PENDING' | 'APPROVED' | 'ALL'>('PENDING');
+  const [managerTab, setManagerTab] = useState<'PENDING' | 'APPROVED' | 'ALL'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredRequests = useMemo(() => {
@@ -153,7 +158,7 @@ const LeaveCalendar: React.FC<LeaveCalendarProps> = ({ currentUser, users, leave
   // Combined calendar items (Leaves + Holidays)
   const calendarItems = useMemo(() => {
     const leaves = leaveRequests
-      .filter(r => r.status === 'APPROVED' || r.status === 'PENDING')
+      .filter(r => r.status === 'APPROVED')
       .map(r => ({
         id: r.id,
         date: r.startDate,
@@ -198,12 +203,12 @@ const LeaveCalendar: React.FC<LeaveCalendarProps> = ({ currentUser, users, leave
     const counts = months.map(m => ({ month: m, bd: 0, ind: 0 }));
     
     BD_HOLIDAYS.forEach(h => {
-      const monthIdx = new Date(h.date).getMonth();
+      const monthIdx = parseInt(h.date.split('-')[1]) - 1;
       counts[monthIdx].bd += 1;
     });
 
     IND_HOLIDAYS.forEach(h => {
-      const monthIdx = new Date(h.date).getMonth();
+      const monthIdx = parseInt(h.date.split('-')[1]) - 1;
       counts[monthIdx].ind += 1;
     });
     
@@ -245,10 +250,10 @@ const LeaveCalendar: React.FC<LeaveCalendarProps> = ({ currentUser, users, leave
   };
 
   const getEventsForDay = (day: Date) => {
-    const dateStr = day.toISOString().split('T')[0];
+    const dateStr = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
     
     const leaves = leaveRequests
-      .filter(r => (r.status === 'APPROVED' || r.status === 'PENDING') && 
+      .filter(r => r.status === 'APPROVED' && 
                    dateStr >= r.startDate && dateStr <= r.endDate)
       .map(r => ({ ...r, isHoliday: false }));
 
@@ -288,7 +293,7 @@ const LeaveCalendar: React.FC<LeaveCalendarProps> = ({ currentUser, users, leave
         <div className="flex justify-between items-start mb-2">
           <span className="font-medium text-sm text-slate-800">{req.userName}</span>
           <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${statusColors[req.status]}`}>
-            {req.status}
+            {req.status === 'PENDING' ? 'UNDER REVIEW' : req.status}
           </span>
         </div>
         <p className="text-xs text-slate-500 mb-1">{req.type} ({req.daysRequested} days)</p>
@@ -353,9 +358,6 @@ const LeaveCalendar: React.FC<LeaveCalendarProps> = ({ currentUser, users, leave
             <div className="flex gap-3">
               <span className="flex items-center gap-1 text-[10px] font-medium text-slate-500">
                 <span className="w-2 h-2 rounded-full bg-blue-500"></span> Approved
-              </span>
-              <span className="flex items-center gap-1 text-[10px] font-medium text-slate-500">
-                <span className="w-2 h-2 rounded-full bg-amber-500"></span> Pending
               </span>
               <span className="flex items-center gap-1 text-[10px] font-medium text-slate-500">
                 <span className="w-2 h-2 rounded-full bg-emerald-500"></span> BD

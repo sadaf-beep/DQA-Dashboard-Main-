@@ -123,6 +123,10 @@ const App: React.FC = () => {
   const initialLeaveLoaded = useRef(false);
   const isInitialDataLoaded = useRef(false);
 
+  useEffect(() => {
+    console.log("Leave Requests State Updated:", leaveRequests);
+  }, [leaveRequests]);
+
   // --- REAL-TIME DATA SUBSCRIPTIONS ---
   useEffect(() => {
     // Listen for connection changes
@@ -245,7 +249,7 @@ const App: React.FC = () => {
 
     // 2. Detect Invoice Changes
     invoices.forEach(newInv => {
-        const oldInv = prevInvoicesRef.current.find(i => i.id === newInv.id);
+        const oldInv = oldInvoices.find(i => i.id === newInv.id);
         
         // A) New Invoice (or newly loaded)
         if (!oldInv) {
@@ -395,6 +399,7 @@ const App: React.FC = () => {
     setInventories(data.inventories);
     setInvoices(data.invoices);
     setEscalations(data.escalations);
+    setLeaveRequests(data.leaveRequests);
     addNotification("System", "Data synchronized with server.");
   };
 
@@ -576,6 +581,10 @@ const App: React.FC = () => {
     if (task) storageService.updateTask({ ...task, isEscalated: false });
   };
 
+  const handleUpdateLeaveRequest = async (req: LeaveRequest) => {
+    await storageService.saveLeaveRequest(req);
+  };
+
   const handleLogout = () => {
     storageService.clearUserSession();
     setCurrentUser(null);
@@ -633,7 +642,23 @@ const App: React.FC = () => {
       />
       <main className="flex-1 ml-64 p-8 h-screen overflow-hidden flex flex-col">
         <div className="flex-1 overflow-auto w-full pb-8">
-          {activeTab === 'dashboard' && <DashboardView tasks={tasks} users={users} currentUser={effectiveUser} inventories={inventories} escalations={escalations} notifications={notifications} onDismissNotification={dismissNotification} onUpdateTask={handleTaskUpdate} onDeleteTasks={handleDeleteTasks} onResolveEscalation={handleEscalationReply} onCloseEscalation={handleCloseEscalation} />}
+          {activeTab === 'dashboard' && (
+            <DashboardView 
+              tasks={tasks} 
+              users={users} 
+              currentUser={effectiveUser} 
+              inventories={inventories} 
+              escalations={escalations} 
+              leaveRequests={leaveRequests}
+              notifications={notifications} 
+              onDismissNotification={dismissNotification} 
+              onUpdateTask={handleTaskUpdate} 
+              onDeleteTasks={handleDeleteTasks} 
+              onResolveEscalation={handleEscalationReply} 
+              onCloseEscalation={handleCloseEscalation} 
+              onUpdateLeaveRequest={handleUpdateLeaveRequest}
+            />
+          )}
           {activeTab === 'tasks' && <TaskBoard tasks={tasks} users={users} currentUser={effectiveUser} onAddTask={handleAddTask} onUpdateTask={handleTaskUpdate} onDeleteTask={handleDeleteTask} onEscalateTask={handleEscalateTask} escalations={escalations} onResolveEscalation={handleEscalationReply} onCloseEscalation={handleCloseEscalation} />}
           {activeTab === 'inventory' && <InventoryManager inventories={inventories} currentUser={effectiveUser} users={users} onUpload={handleInventoryUpload} onDeleteFile={handleInventoryDelete} onUpdateItems={handleInventoryItemsUpdate} onAddTask={handleAddTask} />}
           {activeTab === 'invoices' && (

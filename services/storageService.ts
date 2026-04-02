@@ -405,24 +405,46 @@ export const storageService = {
 
   // --- LEAVE REQUESTS ---
   subscribeLeaveRequests: (callback: (requests: LeaveRequest[]) => void) => {
-    supabase.from('leave_requests').select('*').then(({ data }) => {
+    console.log("Subscribing to Leave Requests...");
+    supabase.from('leave_requests').select('*').then(({ data, error }) => {
+      if (error) {
+        console.error("Supabase Error (Leave Requests Initial Fetch):", error);
+        callback([]);
+        return;
+      }
+      console.log("Initial Leave Requests Fetched:", data?.length || 0);
       if (data) callback(data.map(mapLeaveRequestFromDB));
     });
 
     const channel = supabase.channel('leave-requests-change')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_requests' }, () => {
-         supabase.from('leave_requests').select('*').then(({ data }) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_requests' }, (payload) => {
+         console.log("Leave Requests Change Detected:", payload.eventType);
+         supabase.from('leave_requests').select('*').then(({ data, error }) => {
+           if (error) {
+             console.error("Supabase Error (Leave Requests Refresh):", error);
+             return;
+           }
+           console.log("Leave Requests Refreshed:", data?.length || 0);
            if (data) callback(data.map(mapLeaveRequestFromDB));
          });
       });
-
+      
     setupChannelListeners(channel);
-
-    return () => { supabase.removeChannel(channel); };
+      
+    return () => { 
+      console.log("Unsubscribing from Leave Requests...");
+      supabase.removeChannel(channel); 
+    };
   },
 
   saveLeaveRequest: async (req: LeaveRequest) => {
-    await supabase.from('leave_requests').upsert(mapLeaveRequestToDB(req));
+    console.log("Saving Leave Request:", req.id);
+    const { error } = await supabase.from('leave_requests').upsert(mapLeaveRequestToDB(req));
+    if (error) {
+      console.error("Error saving leave request:", error);
+      throw error;
+    }
+    console.log("Leave Request saved successfully.");
   },
 
   deleteLeaveRequest: async (id: string) => {
