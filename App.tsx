@@ -682,6 +682,10 @@ const App: React.FC = () => {
               onUpdateLeaveRequest={async (req) => {
                 await storageService.saveLeaveRequest(req);
               }}
+              onDeleteLeaveRequest={async (id) => {
+                console.log("Deleting Leave Request:", id);
+                await storageService.deleteLeaveRequest(id);
+              }}
             />
           )}
           {activeTab === 'agent-management' && effectiveUser.role === UserRole.MANAGER && (

@@ -88,6 +88,10 @@ const DashboardView: React.FC<DashboardViewProps> = ({
     return leaveRequests.filter(r => r.status === 'PENDING');
   }, [leaveRequests]);
 
+  const myLeaves = useMemo(() => {
+    return leaveRequests.filter(r => r.userId === currentUser.id).sort((a, b) => b.createdAt - a.createdAt);
+  }, [leaveRequests, currentUser.id]);
+
   const handleEscalationReply = (message: string) => {
       if (activeEscalation) onResolveEscalation(activeEscalation, message);
   };
@@ -250,6 +254,44 @@ const DashboardView: React.FC<DashboardViewProps> = ({
                              >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                              </button>
+                          </div>
+                       </div>
+                     ))
+                   )}
+                </div>
+             </div>
+           )}
+
+           {/* My Leave Requests (Agent Only) */}
+           {currentUser.role === UserRole.AGENT && (
+             <div className="bg-white rounded-xl shadow-sm border border-blue-100 p-5 flex flex-col">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                    <div className="p-1.5 bg-blue-100 rounded text-blue-600">
+                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    </div>
+                    My Leave Requests
+                  </h3>
+                  <span className="text-xs font-bold bg-blue-500 text-white px-2 py-1 rounded-full">{myLeaves.length}</span>
+                </div>
+                <div className="flex-1 overflow-y-auto max-h-48 space-y-2 pr-1 custom-scrollbar">
+                   {myLeaves.length === 0 ? (
+                     <div className="text-center py-8 text-slate-400 italic text-sm">No leave requests submitted.</div>
+                   ) : (
+                     myLeaves.map(req => (
+                       <div key={req.id} className="p-3 bg-blue-50 border border-blue-100 rounded-lg flex justify-between items-center">
+                          <div className="flex-1 min-w-0 mr-4">
+                             <p className="text-sm font-bold text-slate-800 truncate">{req.type}</p>
+                             <div className="flex items-center gap-2 mt-1">
+                                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${req.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700' : req.status === 'REJECTED' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                                   {req.status}
+                                 </span>
+                                 <span className="text-[10px] text-slate-400">•</span>
+                                 <p className="text-[10px] text-slate-500">{req.startDate} to {req.endDate}</p>
+                             </div>
+                          </div>
+                          <div className="text-right">
+                             <p className="text-[10px] text-slate-400 italic">Manage in Leave tab</p>
                           </div>
                        </div>
                      ))
