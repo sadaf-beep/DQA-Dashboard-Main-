@@ -327,16 +327,27 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ invoices, currentUser, 
 
   const isManager = currentUser.role === UserRole.MANAGER;
 
-  // Filter invoices for Agent view and hide completed/uploaded ones
+  // Filter invoices for Agent view and historical sections
   const visibleInvoices = invoices.filter(inv => {
     if (isManager) {
-      // Manager sees everything except UPLOADED
+      // Manager sees everything except UPLOADED in the main list
       return inv.status !== 'UPLOADED';
     } else {
-      // Agent sees only their own, and hides COMPLETED/UPLOADED
-      return inv.assigneeId === currentUser.id && inv.status !== 'COMPLETED' && inv.status !== 'UPLOADED';
+      // Agent sees only their own, and keeps COMPLETED visible for confirmation
+      // Only hide if UPLOADED (meaning manager has finished)
+      return inv.assigneeId === currentUser.id && inv.status !== 'UPLOADED';
     }
   });
+
+  const historicalInvoices = invoices.filter(inv => {
+    if (isManager) {
+      return inv.status === 'UPLOADED';
+    } else {
+      return inv.assigneeId === currentUser.id && inv.status === 'UPLOADED';
+    }
+  }).sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
+
+  const [showHistory, setShowHistory] = useState(false);
 
   // Helper to read file content
   const readFile = (file: File): Promise<string> => {
@@ -532,7 +543,7 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ invoices, currentUser, 
       </div>
 
       <div className="grid gap-6 overflow-y-auto pb-6" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
-        {visibleInvoices.length === 0 && (
+        {visibleInvoices.length === 0 && historicalInvoices.length === 0 && (
           <div className="col-span-full text-center py-12 bg-white rounded-xl border border-dashed border-slate-300">
              <div className="text-slate-400 mb-2">No invoices found.</div>
              {isManager && <p className="text-sm text-blue-500 cursor-pointer hover:underline" onClick={() => setIsModalOpen(true)}>Create the first slot</p>}
@@ -546,6 +557,30 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ invoices, currentUser, 
             onClick={() => setSelectedInvoice(invoice)}
           />
         ))}
+
+        {historicalInvoices.length > 0 && (
+          <div className="col-span-full mt-8">
+            <button 
+              onClick={() => setShowHistory(!showHistory)}
+              className="flex items-center gap-2 text-slate-500 hover:text-slate-800 transition-colors py-2 px-1 border-b border-slate-200 w-full mb-4 group"
+            >
+              <svg className={`w-4 h-4 transition-transform duration-200 ${showHistory ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+              <span className="text-xs font-bold uppercase tracking-widest">Historical / Confirmed Invoices ({historicalInvoices.length})</span>
+            </button>
+            
+            {showHistory && (
+              <div className="grid gap-6" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
+                {historicalInvoices.map(invoice => (
+                  <InvoiceCard
+                    key={invoice.id}
+                    invoice={invoice}
+                    onClick={() => setSelectedInvoice(invoice)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Invoice Details Modal */}

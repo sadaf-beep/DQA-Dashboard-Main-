@@ -17,6 +17,7 @@ const AgentManagement: React.FC<AgentManagementProps> = ({ users, currentUser, t
   const [selectedAgent, setSelectedAgent] = useState<User | null>(null);
   const [isAddingNew, setIsAddingNew] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<User>>({});
 
   // When an agent is selected, initialize the form data with their current info
@@ -58,11 +59,16 @@ const AgentManagement: React.FC<AgentManagementProps> = ({ users, currentUser, t
 
   const handleDelete = () => {
     if (selectedAgent && selectedAgent.id && !isAddingNew) {
-        if(window.confirm(`Are you sure you want to permanently delete agent "${selectedAgent.name}"? This action cannot be undone.`)){
-            onRemoveUser(selectedAgent.id);
-            setSelectedAgent(null);
-            setIsEditing(false);
-        }
+      setIsDeleteModalOpen(true);
+    }
+  };
+
+  const confirmDelete = () => {
+    if (selectedAgent && selectedAgent.id) {
+       onRemoveUser(selectedAgent.id);
+       setSelectedAgent(null);
+       setIsEditing(false);
+       setIsDeleteModalOpen(false);
     }
   };
 
@@ -394,6 +400,38 @@ const AgentManagement: React.FC<AgentManagementProps> = ({ users, currentUser, t
                 </div>
             </div>
          </div>
+      )}
+      {isDeleteModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-scaleIn overflow-hidden relative">
+             <div className="flex items-center gap-4 text-red-600 mb-4">
+                <div className="p-3 bg-red-50 rounded-full">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                </div>
+                <h3 className="text-xl font-bold text-slate-900">Remove Agent?</h3>
+             </div>
+             
+             <p className="text-slate-600 mb-8 leading-relaxed">
+                Are you sure you want to permanently delete <span className="font-bold text-slate-900">{selectedAgent?.name}</span>? 
+                All associated logs will remain in history but the profile will be removed.
+             </p>
+
+             <div className="flex gap-3 pt-4 border-t border-slate-100 mt-2">
+                <button 
+                  onClick={() => setIsDeleteModalOpen(false)}
+                  className="flex-1 py-3 text-sm font-bold text-slate-500 hover:bg-slate-50 rounded-xl transition-colors border border-slate-200"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={confirmDelete}
+                  className="flex-1 py-3 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl shadow-lg shadow-red-200 transition-all active:scale-95"
+                >
+                  Yes, Remove
+                </button>
+             </div>
+          </div>
+        </div>
       )}
     </div>
   );

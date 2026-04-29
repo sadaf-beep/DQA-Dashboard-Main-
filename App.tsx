@@ -449,6 +449,18 @@ const App: React.FC = () => {
 
   const handleTaskUpdate = (updatedTask: Task) => {
     storageService.updateTask(updatedTask);
+
+    // Sync back to Invoice if it's a linked task
+    if (updatedTask.id.startsWith('task-inv-slot-')) {
+        const invoiceId = updatedTask.id.replace('task-', '');
+        const linkedInvoice = invoices.find(i => i.id === invoiceId);
+        if (linkedInvoice) {
+            // Only sync if status changed and not already completed in invoice
+            if (updatedTask.status === TaskStatus.DONE && linkedInvoice.status !== 'COMPLETED' && linkedInvoice.status !== 'UPLOADED') {
+                 storageService.saveInvoice({ ...linkedInvoice, status: 'COMPLETED', completedAt: Date.now() });
+            }
+        }
+    }
   };
 
   const handleAddTask = (taskData: Omit<Task, 'id' | 'createdAt'>) => {
@@ -525,19 +537,27 @@ const App: React.FC = () => {
     if (oldInvoice?.status !== 'COMPLETED' && updatedInvoice.status === 'COMPLETED') {
          const manager = users.find(u => u.role === UserRole.MANAGER);
          if (manager) {
-             const managerTask: Task = {
-                id: `task-mgr-${updatedInvoice.id}`,
-                title: `Upload to Beam: ${updatedInvoice.referenceName}`,
-                description: `The invoice ${updatedInvoice.referenceName} has been processed by the agent. Please upload the final deliverable to Beam Dynamics and confirm in the Studio Invoice tab.`,
-                assigneeIds: [manager.id],
-                status: TaskStatus.TODO,
-                priority: TaskPriority.HIGH,
-                type: TaskType.INVOICE_PROCESSING,
-                dueDate: new Date(Date.now() + 86400000).toISOString(),
-                createdAt: Date.now(),
-                attachments: updatedInvoice.finalCsvFile ? [{ name: updatedInvoice.finalCsvFile.name, type: 'csv', url: '#' }] : []
-             };
-             storageService.addTask(managerTask);
+             const managerTaskId = `task-mgr-${updatedInvoice.id}`;
+             const existingManagerTask = tasks.find(t => t.id === managerTaskId);
+             
+             if (!existingManagerTask) {
+                 const managerTask: Task = {
+                    id: managerTaskId,
+                    title: `Upload to Beam: ${updatedInvoice.referenceName}`,
+                    description: `The invoice ${updatedInvoice.referenceName} has been processed by the agent. Please upload the final deliverable to Beam Dynamics and confirm in the Studio Invoice tab.`,
+                    assigneeIds: [manager.id],
+                    status: TaskStatus.TODO,
+                    priority: TaskPriority.HIGH,
+                    type: TaskType.INVOICE_PROCESSING,
+                    dueDate: new Date(Date.now() + 86400000).toISOString(),
+                    createdAt: Date.now(),
+                    attachments: updatedInvoice.finalCsvFile ? [{ name: updatedInvoice.finalCsvFile.name, type: 'csv', url: '#' }] : []
+                 };
+                 storageService.addTask(managerTask);
+             } else if (existingManagerTask.status === TaskStatus.DONE) {
+                 // If the manager had previously completed it but agent resubmitted, move it back to TODO
+                 storageService.updateTask({ ...existingManagerTask, status: TaskStatus.TODO, completedAt: undefined });
+             }
          }
     }
 

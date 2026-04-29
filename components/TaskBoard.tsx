@@ -36,6 +36,9 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
   const [noteInput, setNoteInput] = useState('');
   const [showHoldInput, setShowHoldInput] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
+  const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
+  const [archiveStatus, setArchiveStatus] = useState<{message: string, type: 'info' | 'success'} | null>(null);
   
   // Escalation Creation State
   const [showEscalationInput, setShowEscalationInput] = useState(false);
@@ -329,19 +332,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
           
           {currentUser.role === UserRole.MANAGER && (
             <button 
-              onClick={() => {
-                if (window.confirm('Are you sure you want to archive completed tasks older than 7 days? They will be removed from this board but kept in the Master Daily Tracker.')) {
-                  const now = Date.now();
-                  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-                  tasks.filter(t => 
-                    t.status === TaskStatus.DONE && 
-                    !t.hiddenFromBoard && 
-                    (now - t.createdAt) > SEVEN_DAYS_MS
-                  ).forEach(t => {
-                    onUpdateTask({ ...t, hiddenFromBoard: true });
-                  });
-                }
-              }}
+              onClick={() => setShowArchiveConfirm(true)}
               className="px-4 py-2 text-sm font-bold rounded-md bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors border border-indigo-200 flex items-center gap-1"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
@@ -414,9 +405,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
                                     <button 
                                         onClick={(e) => {
                                             e.stopPropagation();
-                                            if(window.confirm('Delete this task?')) {
-                                                onDeleteTask(task.id);
-                                            }
+                                            setDeletingTaskId(task.id);
                                         }}
                                         className="text-slate-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 p-1"
                                         title="Delete Task"
@@ -967,6 +956,84 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
                 <Button type="submit">Create Task</Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Archive Confirmation Modal */}
+      {showArchiveConfirm && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 animate-fadeIn">
+            <div className="flex items-center gap-3 text-indigo-600 mb-4">
+              <div className="p-2 bg-indigo-50 rounded-full">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+              </div>
+              <h3 className="text-xl font-bold text-slate-900">Archive Completed Tasks?</h3>
+            </div>
+            
+            <p className="text-slate-600 mb-6">
+              Are you sure you want to archive completed tasks <span className="font-bold">older than 7 days</span>? 
+              They will be removed from this board but will still be accessible in the <span className="italic">Master Daily Tracker</span>.
+            </p>
+            
+            <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+              <Button variant="ghost" onClick={() => { setShowArchiveConfirm(false); setArchiveStatus(null); }}>Cancel</Button>
+              <Button 
+                className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                onClick={() => {
+                  const now = Date.now();
+                  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+                  const toArchive = tasks.filter(t => 
+                    t.status === TaskStatus.DONE && 
+                    !t.hiddenFromBoard && 
+                    (now - (t.completedAt || t.createdAt)) > SEVEN_DAYS_MS
+                  );
+                  
+                  if (toArchive.length === 0) {
+                    setArchiveStatus({ message: "No completed tasks older than 7 days found.", type: 'info' });
+                    setTimeout(() => {
+                      setArchiveStatus(null);
+                      setShowArchiveConfirm(false);
+                    }, 2000);
+                  } else {
+                    toArchive.forEach(t => onUpdateTask({ ...t, hiddenFromBoard: true }));
+                    setArchiveStatus({ message: `Successfully archived ${toArchive.length} tasks!`, type: 'success' });
+                    setTimeout(() => {
+                      setArchiveStatus(null);
+                      setShowArchiveConfirm(false);
+                    }, 2000);
+                  }
+                }}
+              >
+                Archive {tasks.filter(t => t.status === TaskStatus.DONE && !t.hiddenFromBoard && (Date.now() - (t.completedAt || t.createdAt)) > (7 * 24 * 60 * 60 * 1000)).length} Tasks
+              </Button>
+            </div>
+            {archiveStatus && (
+              <div className={`mt-4 p-3 rounded-lg text-sm font-medium animate-fadeIn ${archiveStatus.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-blue-50 text-blue-700 border border-blue-100'}`}>
+                {archiveStatus.message}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Item Deletion Confirmation Modal */}
+      {deletingTaskId && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-fadeIn">
+            <div className="flex items-center gap-3 text-red-600 mb-4">
+              <div className="p-2 bg-red-50 rounded-full">
+                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+              </div>
+              <h3 className="text-xl font-bold text-slate-900">Delete Task?</h3>
+            </div>
+            <p className="text-slate-600 mb-6">Are you sure you want to delete this task? This action cannot be undone.</p>
+            <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+               <Button variant="ghost" onClick={() => setDeletingTaskId(null)}>Cancel</Button>
+               <Button variant="danger" onClick={() => {
+                 onDeleteTask(deletingTaskId);
+                 setDeletingTaskId(null);
+               }}>Delete Task</Button>
+            </div>
           </div>
         </div>
       )}
