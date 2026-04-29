@@ -448,6 +448,8 @@ const App: React.FC = () => {
   }, [tasks]);
 
   const handleTaskUpdate = (updatedTask: Task) => {
+    // Optimistic update
+    setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
     storageService.updateTask(updatedTask);
 
     // Sync back to Invoice if it's a linked task
@@ -461,6 +463,17 @@ const App: React.FC = () => {
             }
         }
     }
+  };
+
+  const handleBatchUpdateTasks = (updatedTasks: Task[]) => {
+    // Optimistic update
+    setTasks(prev => {
+      const taskMap = new Map(updatedTasks.map(t => [t.id, t]));
+      return prev.map(t => taskMap.has(t.id) ? taskMap.get(t.id)! : t);
+    });
+    
+    // Process updates in chunks or iterate (Supabase handles multiple upserts)
+    updatedTasks.forEach(t => storageService.updateTask(t));
   };
 
   const handleAddTask = (taskData: Omit<Task, 'id' | 'createdAt'>) => {
@@ -497,9 +510,18 @@ const App: React.FC = () => {
     storageService.updateInventoryItems(fileId, items);
   };
 
-  const handleAddAgent = (user: User) => storageService.saveUser(user);
-  const handleUpdateAgent = (user: User) => storageService.saveUser(user);
-  const handleRemoveAgent = (id: string) => storageService.deleteUser(id);
+  const handleAddAgent = (user: User) => {
+    setUsers(prev => [user, ...prev]);
+    storageService.saveUser(user);
+  };
+  const handleUpdateAgent = (user: User) => {
+    setUsers(prev => prev.map(u => u.id === user.id ? user : u));
+    storageService.saveUser(user);
+  };
+  const handleRemoveAgent = (id: string) => {
+    setUsers(prev => prev.filter(u => u.id !== id));
+    storageService.deleteUser(id);
+  };
 
   const handleAddInvoice = (newInvoice: Invoice) => {
     storageService.saveInvoice(newInvoice);
@@ -602,6 +624,8 @@ const App: React.FC = () => {
   };
 
   const handleUpdateLeaveRequest = async (req: LeaveRequest) => {
+    // Optimistic update
+    setLeaveRequests(prev => prev.map(r => r.id === req.id ? req : r));
     await storageService.saveLeaveRequest(req);
   };
 
@@ -679,7 +703,21 @@ const App: React.FC = () => {
               onUpdateLeaveRequest={handleUpdateLeaveRequest}
             />
           )}
-          {activeTab === 'tasks' && <TaskBoard tasks={tasks} users={users} currentUser={effectiveUser} onAddTask={handleAddTask} onUpdateTask={handleTaskUpdate} onDeleteTask={handleDeleteTask} onEscalateTask={handleEscalateTask} escalations={escalations} onResolveEscalation={handleEscalationReply} onCloseEscalation={handleCloseEscalation} />}
+          {activeTab === 'tasks' && (
+            <TaskBoard 
+              tasks={tasks} 
+              users={users} 
+              currentUser={effectiveUser} 
+              onAddTask={handleAddTask} 
+              onUpdateTask={handleTaskUpdate} 
+              onBatchUpdateTasks={handleBatchUpdateTasks}
+              onDeleteTask={handleDeleteTask} 
+              onEscalateTask={handleEscalateTask} 
+              escalations={escalations} 
+              onResolveEscalation={handleEscalationReply} 
+              onCloseEscalation={handleCloseEscalation} 
+            />
+          )}
           {activeTab === 'inventory' && <InventoryManager inventories={inventories} currentUser={effectiveUser} users={users} onUpload={handleInventoryUpload} onDeleteFile={handleInventoryDelete} onUpdateItems={handleInventoryItemsUpdate} onAddTask={handleAddTask} />}
           {activeTab === 'invoices' && (
             <InvoiceManager 
@@ -697,13 +735,15 @@ const App: React.FC = () => {
               users={users} 
               leaveRequests={leaveRequests}
               onAddLeaveRequest={async (req) => {
+                // Optimistic update
+                setLeaveRequests(prev => [req, ...prev]);
                 await storageService.saveLeaveRequest(req);
               }}
-              onUpdateLeaveRequest={async (req) => {
-                await storageService.saveLeaveRequest(req);
-              }}
+              onUpdateLeaveRequest={handleUpdateLeaveRequest}
               onDeleteLeaveRequest={async (id) => {
                 console.log("Deleting Leave Request:", id);
+                // Optimistic update
+                setLeaveRequests(prev => prev.filter(r => r.id !== id));
                 await storageService.deleteLeaveRequest(id);
               }}
             />

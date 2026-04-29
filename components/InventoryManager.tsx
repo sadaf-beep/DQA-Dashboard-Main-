@@ -1,5 +1,6 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { InventoryFile, InventoryItem, InventoryStatus, UserRole, User, Task, TaskPriority, TaskType, TaskStatus } from '../types';
 import { Button, Card, Badge } from './Common';
 
@@ -15,6 +16,9 @@ interface InventoryManagerProps {
 
 const COLUMNS = [
     { key: 'productId', label: 'Product ID', width: 'min-w-[150px]' },
+    { key: 'productName', label: 'Name', width: 'min-w-[200px]' },
+    { key: 'mfr', label: 'Manufacturer', width: 'min-w-[150px]' },
+    { key: 'model', label: 'Model', width: 'min-w-[150px]' },
     { key: 'csvStatus', label: 'Status', width: 'min-w-[120px]' },
     { key: 'status', label: 'Workflow', width: 'min-w-[140px]' },
     { key: 'assigneeName', label: 'Assignee', width: 'min-w-[140px]' },
@@ -167,91 +171,111 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ inventories, curren
     if (!file) return;
     setIsUploading(true);
     
-    setTimeout(() => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        try {
-          const text = event.target?.result as string;
-          const lines = text.split(/\r?\n/);
-          if (lines.length < 2) throw new Error("File is empty");
-          
-          const firstLine = lines[0];
-          let delimiter = ',';
-          if (firstLine.includes('\t')) delimiter = '\t';
-          else if (firstLine.includes(';') && !firstLine.includes(',')) delimiter = ';';
+    const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
 
-          const parseLine = (line: string) => {
-             const result = [];
-             let start = 0;
-             let inQuotes = false;
-             for (let i = 0; i < line.length; i++) {
-                 if (line[i] === '"') inQuotes = !inQuotes;
-                 if (line[i] === delimiter && !inQuotes) {
-                     result.push(line.substring(start, i).replace(/^"|"$/g, '').trim());
-                     start = i + 1;
-                 }
-             }
-             result.push(line.substring(start).replace(/^"|"$/g, '').trim());
-             return result;
-          };
-
-          const headers = parseLine(lines[0]).map(h => h.toLowerCase());
-          const findIdx = (keys: string[]) => headers.findIndex(h => keys.some(k => h === k || h.includes(k)));
-          
-          const mapping = {
-            productId: findIdx(['product id', 'product_id', 'productid']),
-            name: findIdx(['name', 'product name']),
-            model: findIdx(['model']),
-            status: findIdx(['status']),
-            augmented: findIdx(['augmented']),
-            reviewed: findIdx(['reviewed']),
-            reviewedBy: findIdx(['reviewed by']),
-            mfr: findIdx(['manufacturer', 'mfr']),
-            studio: findIdx(['studio name', 'studio']),
-            dimension: findIdx(['dimension']),
-            approxMat: findIdx(['approx mat', 'approx match'])
-          };
-
-          const data: InventoryItem[] = [];
-          for (let i = 1; i < Math.min(lines.length, 5000); i++) {
-            if (!lines[i].trim()) continue;
-            const currentLine = parseLine(lines[i]);
-            const getVal = (idx: number) => idx > -1 && currentLine[idx] ? currentLine[idx] : ''; // Empty string for blanks
-
-            data.push({
-              id: `inv-${Date.now()}-${i}`,
-              productId: getVal(mapping.productId),
-              productName: getVal(mapping.name),
-              model: getVal(mapping.model),
-              csvStatus: getVal(mapping.status),
-              augmented: getVal(mapping.augmented),
-              reviewed: getVal(mapping.reviewed),
-              reviewedBy: getVal(mapping.reviewedBy),
-              mfr: getVal(mapping.mfr),
-              studio: getVal(mapping.studio),
-              dimension: getVal(mapping.dimension),
-              approxMatch: getVal(mapping.approxMat),
-              status: InventoryStatus.PENDING
-            });
-          }
-
-          onUpload({
-            id: Date.now().toString(),
-            fileName: file.name.replace('.csv', ''),
-            uploadDate: Date.now(),
-            rowCount: data.length,
-            data: data
-          });
-        } catch (err) {
-          console.error(err);
-          alert("Failed to parse CSV. Please ensure standard CSV format.");
-        } finally {
-          setIsUploading(false);
-          if (fileInputRef.current) fileInputRef.current.value = '';
-        }
+    const processData = (rawData: any[]) => {
+      if (rawData.length < 2) throw new Error("File is too small");
+      
+      const headers = rawData[0].map((h: any) => String(h || '').toLowerCase().trim());
+      const findIdx = (keys: string[]) => headers.findIndex((h: string) => keys.some(k => h === k || h.includes(k)));
+      
+      const mapping = {
+        productId: findIdx(['product id', 'product_id', 'productid']),
+        name: findIdx(['name', 'product name']),
+        model: findIdx(['model']),
+        status: findIdx(['status']),
+        augmented: findIdx(['augmented']),
+        reviewed: findIdx(['reviewed']),
+        reviewedBy: findIdx(['reviewed by']),
+        mfr: findIdx(['manufacturer', 'mfr']),
+        studio: findIdx(['studio name', 'studio']),
+        dimension: findIdx(['dimension']),
+        approxMat: findIdx(['approx mat', 'approx match'])
       };
+
+      const items: InventoryItem[] = [];
+      // Limit to 5000 rows for performance
+      for (let i = 1; i < Math.min(rawData.length, 5001); i++) {
+        const currentLine = rawData[i];
+        if (!currentLine || currentLine.length === 0 || (currentLine.length === 1 && !currentLine[0])) continue;
+        
+        const getVal = (idx: number) => idx > -1 && currentLine[idx] !== undefined ? String(currentLine[idx]).trim() : '';
+
+        items.push({
+          id: `inv-${Date.now()}-${i}`,
+          productId: getVal(mapping.productId),
+          productName: getVal(mapping.name),
+          model: getVal(mapping.model),
+          csvStatus: getVal(mapping.status),
+          augmented: getVal(mapping.augmented),
+          reviewed: getVal(mapping.reviewed),
+          reviewedBy: getVal(mapping.reviewedBy),
+          mfr: getVal(mapping.mfr),
+          studio: getVal(mapping.studio),
+          dimension: getVal(mapping.dimension),
+          approxMatch: getVal(mapping.approxMat),
+          status: InventoryStatus.PENDING
+        });
+      }
+
+      onUpload({
+        id: Date.now().toString(),
+        fileName: file.name.replace(/\.(csv|xlsx|xls)$/, ''),
+        uploadDate: Date.now(),
+        rowCount: items.length,
+        data: items
+      });
+    };
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        if (isExcel) {
+          const data = new Uint8Array(event.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+          const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+          processData(jsonData as any[]);
+        } else {
+          const text = event.target?.result as string;
+          const lines = text.split(/\r?\n/).filter(l => l.trim());
+          if (lines.length === 0) throw new Error("CSV is empty");
+
+          const firstLine = lines[0];
+          const delimiter = firstLine.includes('\t') ? '\t' : (firstLine.includes(';') && !firstLine.includes(',') ? ';' : ',');
+          
+          const parseCSVLine = (line: string) => {
+            const result = [];
+            let start = 0;
+            let inQuotes = false;
+            for (let i = 0; i < line.length; i++) {
+                if (line[i] === '"') inQuotes = !inQuotes;
+                if (line[i] === delimiter && !inQuotes) {
+                    result.push(line.substring(start, i).replace(/^"|"$/g, '').trim());
+                    start = i + 1;
+                }
+            }
+            result.push(line.substring(start).replace(/^"|"$/g, '').trim());
+            return result;
+          };
+
+          const rawData = lines.map(line => parseCSVLine(line));
+          processData(rawData);
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Failed to parse file. Please ensure it's a valid CSV or Excel file.");
+      } finally {
+        setIsUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    };
+
+    if (isExcel) {
+      reader.readAsArrayBuffer(file);
+    } else {
       reader.readAsText(file);
-    }, 100);
+    }
   };
 
   const handleAssignSubmit = () => {
@@ -342,7 +366,7 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ inventories, curren
              + Add Studio File
           </Button>
         )}
-        <input type="file" accept=".csv" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
+        <input type="file" accept=".csv, .xlsx, .xls" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
       </div>
 
       {/* File Tabs */}

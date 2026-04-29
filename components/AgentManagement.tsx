@@ -20,6 +20,18 @@ const AgentManagement: React.FC<AgentManagementProps> = ({ users, currentUser, t
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<User>>({});
 
+  // Keep selectedAgent in sync with the users prop if it's updated externally
+  useEffect(() => {
+    if (selectedAgent) {
+      const updated = users.find(u => u.id === selectedAgent.id);
+      if (updated && JSON.stringify(updated) !== JSON.stringify(selectedAgent)) {
+        if (!isEditing) {
+          setSelectedAgent(updated);
+        }
+      }
+    }
+  }, [users, selectedAgent?.id, isEditing]);
+
   // When an agent is selected, initialize the form data with their current info
   useEffect(() => {
     if (selectedAgent && selectedAgent.id) {
@@ -136,7 +148,11 @@ const AgentManagement: React.FC<AgentManagementProps> = ({ users, currentUser, t
                             )}
                         </div>
                         <h3 className="font-bold text-slate-900 text-sm mb-1">{user.name}</h3>
-                        <div className="bg-blue-50 text-blue-600 text-[9px] font-bold px-3 py-0.5 rounded-full uppercase tracking-wider">
+                        <div className={`text-[9px] font-black px-3 py-0.5 rounded-full uppercase tracking-widest ${
+                          user.role === UserRole.MANAGER 
+                            ? 'bg-amber-100 text-amber-700 border border-amber-200' 
+                            : 'bg-blue-50 text-blue-600 border border-blue-100'
+                        }`}>
                            {user.role}
                         </div>
                     </div>
@@ -199,7 +215,11 @@ const AgentManagement: React.FC<AgentManagementProps> = ({ users, currentUser, t
                         ) : (
                           <h2 className="text-xl font-black text-[#1E293B] mb-1">{formData.name}</h2>
                         )}
-                        <div className="bg-[#E2E8F0] text-[#64748B] text-[9px] font-black px-3 py-0.5 rounded-full uppercase tracking-[0.1em] mt-1">
+                        <div className={`text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-[0.15em] mt-1 border ${
+                          formData.role === UserRole.MANAGER 
+                            ? 'bg-amber-100 text-amber-700 border-amber-200' 
+                            : 'bg-slate-100 text-slate-500 border-slate-200'
+                        }`}>
                            {formData.role || UserRole.AGENT}
                         </div>
                     </div>
@@ -289,6 +309,36 @@ const AgentManagement: React.FC<AgentManagementProps> = ({ users, currentUser, t
                     </div>
                     
                     <div className="mt-6 pt-4 border-t border-slate-100 flex flex-col gap-2">
+                         {!isAddingNew && selectedAgent.id && selectedAgent.id !== currentUser.id && (
+                           <button 
+                              onClick={() => {
+                                const currentRole = formData.role || selectedAgent.role || UserRole.AGENT;
+                                const isMGR = currentRole === UserRole.MANAGER;
+                                const newRole = isMGR ? UserRole.AGENT : UserRole.MANAGER;
+                                
+                                if (window.confirm(`Are you sure you want to ${isMGR ? 'REVOKE' : 'GRANT'} managerial access for ${selectedAgent.name}? ${isMGR ? 'They will lose access to team management features.' : 'They will gain full access to administrative tools.'}`)) {
+                                  const updatedUser = { 
+                                    ...selectedAgent, 
+                                    ...formData, 
+                                    role: newRole 
+                                  } as User;
+                                  
+                                  onUpdateUser(updatedUser);
+                                  setFormData(updatedUser);
+                                  setSelectedAgent(updatedUser);
+                                }
+                              }}
+                              className={`w-full py-3 text-[9px] font-black uppercase tracking-[0.15em] rounded-xl transition-all shadow-sm border-2 flex items-center justify-center gap-2 mb-2 ${
+                                (formData.role || selectedAgent.role) === UserRole.MANAGER 
+                                  ? 'text-amber-600 border-amber-100 bg-amber-50 hover:bg-amber-600 hover:text-white shadow-amber-100' 
+                                  : 'text-indigo-600 border-indigo-100 bg-indigo-50 hover:bg-indigo-600 hover:text-white shadow-indigo-100'
+                              }`}
+                           >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+                              {(formData.role || selectedAgent.role) === UserRole.MANAGER ? 'REVOKE MANAGER ACCESS' : 'GRANT MANAGER ACCESS'}
+                           </button>
+                         )}
+
                          {isEditing ? (
                            <>
                              <button 

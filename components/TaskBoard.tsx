@@ -10,6 +10,7 @@ interface TaskBoardProps {
   currentUser: User;
   onAddTask: (task: Omit<Task, 'id' | 'createdAt'>) => void;
   onUpdateTask: (task: Task) => void;
+  onBatchUpdateTasks?: (tasks: Task[]) => void;
   onDeleteTask: (taskId: string) => void;
   onEscalateTask?: (task: Task, reason: string, link?: string) => void; 
   escalations?: Escalation[];
@@ -17,7 +18,7 @@ interface TaskBoardProps {
   onCloseEscalation?: (escalation: Escalation) => void; 
 }
 
-const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddTask, onUpdateTask, onDeleteTask, onEscalateTask, escalations = [], onResolveEscalation, onCloseEscalation }) => {
+const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddTask, onUpdateTask, onBatchUpdateTasks, onDeleteTask, onEscalateTask, escalations = [], onResolveEscalation, onCloseEscalation }) => {
   const [filter, setFilter] = useState<'ALL' | 'MY_TASKS'>('ALL');
   
   // Create Modal State
@@ -971,8 +972,8 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
             </div>
             
             <p className="text-slate-600 mb-6">
-              Are you sure you want to archive completed tasks <span className="font-bold">older than 7 days</span>? 
-              They will be removed from this board but will still be accessible in the <span className="italic">Master Daily Tracker</span>.
+              Are you sure you want to archive all <span className="font-bold text-emerald-600">completed tasks</span>? 
+              They will be removed from this board immediately but will still be accessible in the <span className="italic">Master Daily Tracker</span>.
             </p>
             
             <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
@@ -980,22 +981,23 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
               <Button 
                 className="bg-indigo-600 hover:bg-indigo-700 text-white"
                 onClick={() => {
-                  const now = Date.now();
-                  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
                   const toArchive = tasks.filter(t => 
                     t.status === TaskStatus.DONE && 
-                    !t.hiddenFromBoard && 
-                    (now - (t.completedAt || t.createdAt)) > SEVEN_DAYS_MS
+                    !t.hiddenFromBoard
                   );
                   
                   if (toArchive.length === 0) {
-                    setArchiveStatus({ message: "No completed tasks older than 7 days found.", type: 'info' });
+                    setArchiveStatus({ message: "No completed tasks found to archive.", type: 'info' });
                     setTimeout(() => {
                       setArchiveStatus(null);
                       setShowArchiveConfirm(false);
                     }, 2000);
                   } else {
-                    toArchive.forEach(t => onUpdateTask({ ...t, hiddenFromBoard: true }));
+                    if (onBatchUpdateTasks) {
+                      onBatchUpdateTasks(toArchive.map(t => ({ ...t, hiddenFromBoard: true })));
+                    } else {
+                      toArchive.forEach(t => onUpdateTask({ ...t, hiddenFromBoard: true }));
+                    }
                     setArchiveStatus({ message: `Successfully archived ${toArchive.length} tasks!`, type: 'success' });
                     setTimeout(() => {
                       setArchiveStatus(null);
@@ -1004,7 +1006,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
                   }
                 }}
               >
-                Archive {tasks.filter(t => t.status === TaskStatus.DONE && !t.hiddenFromBoard && (Date.now() - (t.completedAt || t.createdAt)) > (7 * 24 * 60 * 60 * 1000)).length} Tasks
+                Archive {tasks.filter(t => t.status === TaskStatus.DONE && !t.hiddenFromBoard).length} Tasks
               </Button>
             </div>
             {archiveStatus && (
