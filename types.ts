@@ -125,6 +125,7 @@ export interface InventoryItem {
   model: string;
   csvStatus?: string; // "Status" column from CSV
   augmented?: string; // "Augmented" column
+  augmentedBy?: string; // App field: Who augmented it
   reviewed?: string; // "Reviewed" column
   reviewedBy?: string; // "Reviewed By" column
   mfr: string; // "Manufacturer"

@@ -15,13 +15,14 @@ interface InventoryManagerProps {
 }
 
 const COLUMNS = [
-    { key: 'productId', label: 'Product ID', width: 'min-w-[150px]' },
-    { key: 'productName', label: 'Name', width: 'min-w-[200px]' },
-    { key: 'mfr', label: 'Manufacturer', width: 'min-w-[150px]' },
-    { key: 'model', label: 'Model', width: 'min-w-[150px]' },
-    { key: 'csvStatus', label: 'Status', width: 'min-w-[120px]' },
-    { key: 'status', label: 'Workflow', width: 'min-w-[140px]' },
-    { key: 'assigneeName', label: 'Assignee', width: 'min-w-[140px]' },
+    { key: 'productId', label: 'Product ID', defaultWidth: 150 },
+    { key: 'productName', label: 'Name', defaultWidth: 200 },
+    { key: 'mfr', label: 'Manufacturer', defaultWidth: 150 },
+    { key: 'model', label: 'Model', defaultWidth: 150 },
+    { key: 'csvStatus', label: 'Status', defaultWidth: 120 },
+    { key: 'status', label: 'Workflow', defaultWidth: 140 },
+    { key: 'assigneeName', label: 'Assignee', defaultWidth: 140 },
+    { key: 'augmentedBy', label: 'Augmented By', defaultWidth: 140 },
 ];
 
 const InventoryManager: React.FC<InventoryManagerProps> = ({ inventories, currentUser, users, onUpload, onDeleteFile, onUpdateItems, onAddTask }) => {
@@ -46,6 +47,33 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ inventories, curren
 
   const activeInventory = inventories.find(inv => inv.id === activeFileId) || null;
   const isManager = currentUser.role === UserRole.MANAGER;
+
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+  const resizingRef = useRef<{key: string, startX: number, startW: number} | null>(null);
+
+  const handleMouseDown = (e: React.MouseEvent, key: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const currentW = columnWidths[key] || COLUMNS.find(c => c.key === key)?.defaultWidth || 150;
+      resizingRef.current = { key, startX: e.pageX, startW: currentW };
+      
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleMouseMove = (e: MouseEvent) => {
+      if (resizingRef.current) {
+          const { key, startX, startW } = resizingRef.current;
+          const newW = Math.max(50, startW + (e.pageX - startX));
+          setColumnWidths(prev => ({ ...prev, [key]: newW }));
+      }
+  };
+
+  const handleMouseUp = () => {
+      resizingRef.current = null;
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+  };
 
   // --- FILTER & SORT LOGIC ---
   const filteredData = useMemo(() => {
@@ -185,6 +213,7 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ inventories, curren
         model: findIdx(['model']),
         status: findIdx(['status']),
         augmented: findIdx(['augmented']),
+        augmentedBy: findIdx(['augmented by']),
         reviewed: findIdx(['reviewed']),
         reviewedBy: findIdx(['reviewed by']),
         mfr: findIdx(['manufacturer', 'mfr']),
@@ -208,6 +237,7 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ inventories, curren
           model: getVal(mapping.model),
           csvStatus: getVal(mapping.status),
           augmented: getVal(mapping.augmented),
+          augmentedBy: getVal(mapping.augmentedBy),
           reviewed: getVal(mapping.reviewed),
           reviewedBy: getVal(mapping.reviewedBy),
           mfr: getVal(mapping.mfr),
@@ -319,7 +349,13 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ inventories, curren
   const handleAgentStatusUpdate = (newStatus: InventoryStatus) => {
     if (!activeInventory) return;
     const updatedItems = activeInventory.data.map(item => {
-      if (selectedIds.has(item.id)) return { ...item, status: newStatus };
+      if (selectedIds.has(item.id)) {
+          const updates: Partial<InventoryItem> = { status: newStatus };
+          if (newStatus === InventoryStatus.AUGMENTED) {
+              updates.augmentedBy = currentUser.name;
+          }
+          return { ...item, ...updates };
+      }
       return item;
     });
     onUpdateItems(activeInventory.id, updatedItems);
@@ -412,20 +448,25 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ inventories, curren
 
           <Card className="flex-1 overflow-hidden relative">
             <div className="overflow-auto h-full pb-20">
-              <table className="w-full text-sm text-left whitespace-nowrap border-collapse">
+              <table className="w-full text-sm text-left whitespace-nowrap border-collapse table-fixed">
                 <thead className="text-xs text-slate-700 uppercase bg-slate-50 sticky top-0 z-20 shadow-sm">
                   <tr>
                     <th className="p-4 w-10 bg-slate-50 border-b border-slate-200">
                         <input type="checkbox" onChange={(e) => setSelectedIds(e.target.checked ? new Set(filteredData.map(i => i.id)) : new Set())} checked={filteredData.length > 0 && selectedIds.size === filteredData.length} />
                     </th>
                     {COLUMNS.map(col => (
-                        <th key={col.key} className={`px-6 py-3 ${col.width} bg-slate-50 border-b border-slate-200 relative group`}>
-                            <div className="flex items-center justify-between cursor-pointer hover:text-blue-600" onClick={() => setActiveFilterCol(activeFilterCol === col.key ? null : col.key)}>
-                                <span>{col.label}</span>
-                                <div className={`p-1 rounded hover:bg-slate-200 ${columnFilters[col.key] || sortConfig?.key === col.key ? 'text-blue-600 bg-blue-50' : 'text-slate-400'}`}>
+                        <th key={col.key} className={`px-6 py-3 bg-slate-50 border-b border-slate-200 relative group`} style={{ width: columnWidths[col.key] || col.defaultWidth, minWidth: columnWidths[col.key] || col.defaultWidth, maxWidth: columnWidths[col.key] || col.defaultWidth }}>
+                            <div className="flex items-center justify-between cursor-pointer hover:text-blue-600 truncate" onClick={() => setActiveFilterCol(activeFilterCol === col.key ? null : col.key)}>
+                                <span className="truncate mr-2">{col.label}</span>
+                                <div className={`p-1 flex-shrink-0 rounded hover:bg-slate-200 ${columnFilters[col.key] || sortConfig?.key === col.key ? 'text-blue-600 bg-blue-50' : 'text-slate-400'}`}>
                                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
                                 </div>
                             </div>
+                            {/* Resize Handle */}
+                            <div 
+                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400 z-10 transition-colors"
+                                onMouseDown={(e) => handleMouseDown(e, col.key)}
+                            />
 
                             {/* DROPDOWN MENU */}
                             {activeFilterCol === col.key && (
@@ -462,7 +503,7 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ inventories, curren
                           />
                         </td>
                         {COLUMNS.map(col => (
-                            <td key={col.key} className="px-6 py-3" onClick={col.key === 'productId' ? e => e.stopPropagation() : undefined}>
+                            <td key={col.key} className="px-6 py-3 truncate" onClick={col.key === 'productId' ? e => e.stopPropagation() : undefined}>
                                 {col.key === 'productId' ? (
                                     <a 
                                         href={`https://insights.beamdynamics.io/product/${encodeURIComponent(
