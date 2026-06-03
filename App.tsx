@@ -441,9 +441,16 @@ const App: React.FC = () => {
     );
 
     if (tasksToHide.length > 0) {
-      tasksToHide.forEach(t => {
-        storageService.updateTask({ ...t, hiddenFromBoard: true });
+      const updatedTasks = tasksToHide.map(t => ({ ...t, hiddenFromBoard: true }));
+      setTasks(prev => {
+         const taskMap = new Map(updatedTasks.map(t => [t.id, t]));
+         return prev.map(t => taskMap.has(t.id) ? taskMap.get(t.id)! : t);
       });
+      if (storageService.batchUpdateTasks) {
+         storageService.batchUpdateTasks(updatedTasks);
+      } else {
+         updatedTasks.forEach(t => storageService.updateTask(t));
+      }
     }
   }, [tasks]);
 
@@ -473,7 +480,11 @@ const App: React.FC = () => {
     });
     
     // Process updates in chunks or iterate (Supabase handles multiple upserts)
-    updatedTasks.forEach(t => storageService.updateTask(t));
+    if (storageService.batchUpdateTasks) {
+      storageService.batchUpdateTasks(updatedTasks);
+    } else {
+      updatedTasks.forEach(t => storageService.updateTask(t));
+    }
   };
 
   const handleAddTask = (taskData: Omit<Task, 'id' | 'createdAt'>) => {
@@ -495,7 +506,11 @@ const App: React.FC = () => {
   const handleDeleteTasks = (taskIds: string[]) => {
     // Permanently delete multiple tasks from DB (used by Daily Tracker)
     setTasks(prev => prev.filter(t => !taskIds.includes(t.id)));
-    taskIds.forEach(id => storageService.deleteTask(id));
+    if (storageService.deleteTasks) {
+      storageService.deleteTasks(taskIds);
+    } else {
+      taskIds.forEach(id => storageService.deleteTask(id));
+    }
   };
 
   const handleInventoryUpload = (file: InventoryFile) => {

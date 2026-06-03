@@ -320,8 +320,20 @@ export const storageService = {
     if (error) console.error("Error updating task:", error);
   },
 
+  batchUpdateTasks: async (tasks: Task[]) => {
+    if (tasks.length === 0) return;
+    const { error } = await supabase.from('tasks').upsert(tasks.map(mapTaskToDB));
+    if (error) console.error("Error batch updating tasks:", error);
+  },
+
   deleteTask: async (id: string) => {
     await supabase.from('tasks').delete().eq('id', id);
+  },
+
+  deleteTasks: async (ids: string[]) => {
+    if (ids.length === 0) return;
+    const { error } = await supabase.from('tasks').delete().in('id', ids);
+    if (error) console.error("Error batch deleting tasks:", error);
   },
 
   // --- INVENTORY ---
