@@ -45,6 +45,8 @@ const mapTaskFromDB = (row: any): Task => {
   let assigneeIds = [row.assignee_id].filter(Boolean);
   let customType = undefined;
   let hiddenFromBoard = false;
+  let inventoryItemIds = row.inventory_item_ids;
+  let inventoryFileId = row.inventory_file_id;
 
   if (row.tags && row.tags.length > 0) {
     try {
@@ -52,6 +54,8 @@ const mapTaskFromDB = (row: any): Task => {
       if (parsed.assigneeIds) assigneeIds = parsed.assigneeIds;
       if (parsed.customType) customType = parsed.customType;
       if (parsed.hiddenFromBoard) hiddenFromBoard = parsed.hiddenFromBoard;
+      if (parsed.inventoryItemIds) inventoryItemIds = parsed.inventoryItemIds;
+      if (parsed.inventoryFileId) inventoryFileId = parsed.inventoryFileId;
     } catch (e) {
       // Not a JSON string, ignore
     }
@@ -71,8 +75,8 @@ const mapTaskFromDB = (row: any): Task => {
     completedAt: row.completed_at ? Number(row.completed_at) : undefined,
     notes: row.notes || [],
     attachments: row.attachments || [],
-    inventoryFileId: row.inventory_file_id,
-    inventoryItemIds: row.inventory_item_ids,
+    inventoryFileId: inventoryFileId,
+    inventoryItemIds: inventoryItemIds,
     isEscalated: row.is_escalated,
     hiddenFromBoard: hiddenFromBoard || row.hidden_from_board // Support legacy column if it exists
   };
@@ -83,7 +87,13 @@ const mapTaskToDB = (task: Task) => ({
   title: task.title,
   description: task.description,
   assignee_id: (task.assigneeIds && task.assigneeIds[0]) || null, // Keep for backwards compatibility if needed
-  tags: [JSON.stringify({ assigneeIds: task.assigneeIds || [], customType: task.customType, hiddenFromBoard: task.hiddenFromBoard })],
+  tags: [JSON.stringify({ 
+    assigneeIds: task.assigneeIds || [], 
+    customType: task.customType, 
+    hiddenFromBoard: task.hiddenFromBoard,
+    inventoryItemIds: task.inventoryItemIds,
+    inventoryFileId: task.inventoryFileId
+  })],
   status: task.status,
   priority: task.priority,
   type: task.type,

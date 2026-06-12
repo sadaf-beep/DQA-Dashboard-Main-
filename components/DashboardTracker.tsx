@@ -30,24 +30,37 @@ const DashboardTracker: React.FC<DashboardTrackerProps> = ({ tasks, users, curre
 
   // Helper to extract "Studio/Project" from task titles based on app naming conventions
   const getStudioName = (task: Task) => {
-    // New Automation Format: "StudioName_QA Review" -> Returns "StudioName"
-    if (task.title.includes('_QA Review')) {
-      return task.title.replace('_QA Review', '').trim();
+    let name = task.title;
+
+    if (name.includes('_QA Review')) {
+      name = name.replace('_QA Review', '');
+    } else if (task.type === TaskType.INVOICE_PROCESSING) {
+      name = name.replace('Process Invoice:', '');
+    } else if (name.includes('items in')) {
+      const parts = name.split('items in');
+      if (parts.length > 1) name = parts[1];
+    } else if (name.includes('products in')) {
+      const parts = name.split('products in');
+      if (parts.length > 1) name = parts[1];
+    } else if (name.includes(' - ')) {
+      // Handle dummy tasks which use "Studio Name - Task Name" format
+      name = name.split(' - ')[0];
     }
-    
-    if (task.type === TaskType.INVOICE_PROCESSING) {
-      return task.title.replace('Process Invoice:', '').trim();
-    }
-    if (task.title.includes('items in')) {
-      const parts = task.title.split('items in');
-      if (parts.length > 1) return parts[1].trim();
-    }
-    if (task.title.includes('products in')) {
-      const parts = task.title.split('products in');
-      if (parts.length > 1) return parts[1].trim();
-    }
-    // Fallback: try to clean up common prefixes if needed, or return title
-    return task.title;
+
+    name = name.trim();
+
+    // Normalize variations for a tidier Tracker presentation
+    const lowerName = name.toLowerCase();
+    if (lowerName.includes('diversified') || lowerName.includes('diversifed')) return 'Diversified';
+    if (lowerName === 'tva qa' || lowerName === 'tva qa ' || lowerName === 'qa tva' || lowerName.includes('tva 404') || lowerName === 'tva') return 'TVA';
+    if (lowerName.includes('asg')) return 'ASG';
+    if (lowerName.includes('mobile tv')) return 'Mobile TV';
+    if (lowerName.includes('auburn') || lowerName.includes('aurbun')) return 'Auburn University';
+    if (lowerName.includes('thumbwar')) return 'Thumbwar';
+    if (lowerName.includes('media pro')) return 'Media Pro';
+    if (lowerName.includes('broken links') || lowerName.includes('image url')) return 'Product Links';
+
+    return name;
   };
 
   // Helper to determine Category (Trial vs Paid vs Invoice)
@@ -263,29 +276,29 @@ const DashboardTracker: React.FC<DashboardTrackerProps> = ({ tasks, users, curre
 
     const csvData = [
       ["3/25/2026","Paid Studio","SCG Process Inc","Augmenting","IN_PROGRESS","HIGH","Simran Agarwal; Ahnaf Tahmid","3/26/2026"],
-      ["3/25/2026","Paid Studio","Lenovo","QA Review & Augmenting","IN_PROGRESS","HIGH","Riad Mostofa; Fariha Elahee ","3/26/2026"],
-      ["3/25/2026","Paid Studio","Amazon","QA Review & Augmenting","IN_PROGRESS","HIGH","Fariha Elahee ; Ahnaf Tahmid","3/26/2026"],
+      ["3/25/2026","Paid Studio","Lenovo","QA Review & Augmenting","IN_PROGRESS","HIGH","Riad Mostofa; Fariha Elahee","3/26/2026"],
+      ["3/25/2026","Paid Studio","Amazon","QA Review & Augmenting","IN_PROGRESS","HIGH","Fariha Elahee; Ahnaf Tahmid","3/26/2026"],
       ["3/25/2026","Paid Studio","ASG","QA Review & Augmenting","DONE","HIGH","Ahnaf Tahmid; Riad Mostofa","3/26/2026"],
-      ["3/23/2026","Paid Studio","diversifed qa last","QA Review","DONE","HIGH","Simran Agarwal","3/23/2026"],
-      ["3/18/2026","Paid Studio","TVA QA ","QA Review","DONE","CRITICAL","Ahnaf Tahmid","3/18/2026"],
-      ["3/18/2026","Paid Studio","Augment Plus QA Diversified ","QA Review","DONE","CRITICAL","Fariha Elahee ","3/18/2026"],
-      ["3/16/2026","Paid Studio","QA TVA","QA Review","DONE","CRITICAL","Simran Agarwal","3/17/2026"],
-      ["3/16/2026","Paid Studio","mobile tv (2)","QA Review","DONE","HIGH","Fariha Elahee ","3/16/2026"],
+      ["3/23/2026","Paid Studio","Diversified","QA Review","DONE","HIGH","Simran Agarwal","3/23/2026"],
+      ["3/18/2026","Paid Studio","TVA","QA Review","DONE","CRITICAL","Ahnaf Tahmid","3/18/2026"],
+      ["3/18/2026","Paid Studio","Diversified","QA Review","DONE","CRITICAL","Fariha Elahee","3/18/2026"],
+      ["3/16/2026","Paid Studio","TVA","QA Review","DONE","CRITICAL","Simran Agarwal","3/17/2026"],
+      ["3/16/2026","Paid Studio","Mobile TV","QA Review","DONE","HIGH","Fariha Elahee","3/16/2026"],
       ["3/13/2026","Paid Studio","Mobile TV","Augmenting","DONE","HIGH","Ahnaf Tahmid","3/13/2026"],
       ["3/13/2026","Paid Studio","Image URL","404 CHECK","DONE","CRITICAL","Simran Agarwal","3/13/2026"],
-      ["3/13/2026","Paid Studio","Replace all broken links (Product)","404 CHECK","DONE","CRITICAL","Simran Agarwal","3/12/2026"],
-      ["3/10/2026","Paid Studio","diversified ARA QA","QA Review","DONE","HIGH","Simran Agarwal; Fariha Elahee ","3/11/2026"],
-      ["3/10/2026","Paid Studio","diversified AS QA","QA Review","DONE","HIGH","Fariha Elahee ; Ahnaf Tahmid; Riad Mostofa","3/11/2026"],
+      ["3/13/2026","Paid Studio","Product Links","404 CHECK","DONE","CRITICAL","Simran Agarwal","3/12/2026"],
+      ["3/10/2026","Paid Studio","Diversified","QA Review","DONE","HIGH","Simran Agarwal; Fariha Elahee","3/11/2026"],
+      ["3/10/2026","Paid Studio","Diversified","QA Review","DONE","HIGH","Fariha Elahee; Ahnaf Tahmid; Riad Mostofa","3/11/2026"],
       ["3/9/2026","Paid Studio","Prestonwood","QA Review & Augmenting","DONE","HIGH","Ahnaf Tahmid; Simran Agarwal","3/13/2026"],
-      ["3/9/2026","Paid Studio","aurbun uni","QA Review","DONE","HIGH","Ahnaf Tahmid","3/9/2026"],
-      ["3/5/2026","Paid Studio","Auburn Uni","Augmenting & QA Review","DONE","HIGH","Fariha Elahee ; Riad Mostofa; Ahnaf Tahmid","3/5/2026"],
-      ["3/2/2026","Paid Studio","TVA 404 Image Error ","404 CHECK","DONE","HIGH","Fariha Elahee ","3/2/2026"],
-      ["2/26/2026","Paid Studio","Thumbwar (Augment)","Augmenting","DONE","HIGH","Simran Agarwal; Fariha Elahee ; Ahnaf Tahmid; Riad Mostofa","3/2/2026"],
-      ["2/25/2026","Paid Studio","ASG Final QA BATCH","QA Review","DONE","HIGH","Ahnaf Tahmid","2/25/2026"],
-      ["2/25/2026","Paid Studio","Media pro","QA Review & Augmenting","DONE","HIGH","Ahnaf Tahmid; Simran Agarwal; Riad Mostofa","3/4/2026"],
-      ["2/25/2026","Paid Studio","Diversified QA Batch 2 (AF)","QA Review","DONE","HIGH","Simran Agarwal","2/25/2026"],
-      ["2/24/2026","Paid Studio","Diversified QA Batch 1 (AA)","QA Review","DONE","HIGH","Fariha Elahee ; Simran Agarwal; Riad Mostofa","2/24/2026"],
-      ["2/11/2026","Paid Studio","ASG QA Batch 1","QA Review","DONE","HIGH","Riad Mostofa","2/12/2026"]
+      ["3/9/2026","Paid Studio","Auburn University","QA Review","DONE","HIGH","Ahnaf Tahmid","3/9/2026"],
+      ["3/5/2026","Paid Studio","Auburn University","Augmenting & QA Review","DONE","HIGH","Fariha Elahee; Riad Mostofa; Ahnaf Tahmid","3/5/2026"],
+      ["3/2/2026","Paid Studio","TVA","404 CHECK","DONE","HIGH","Fariha Elahee","3/2/2026"],
+      ["2/26/2026","Paid Studio","Thumbwar","Augmenting","DONE","HIGH","Simran Agarwal; Fariha Elahee; Ahnaf Tahmid; Riad Mostofa","3/2/2026"],
+      ["2/25/2026","Paid Studio","ASG","QA Review","DONE","HIGH","Ahnaf Tahmid","2/25/2026"],
+      ["2/25/2026","Paid Studio","Media Pro","QA Review & Augmenting","DONE","HIGH","Ahnaf Tahmid; Simran Agarwal; Riad Mostofa","3/4/2026"],
+      ["2/25/2026","Paid Studio","Diversified","QA Review","DONE","HIGH","Simran Agarwal","2/25/2026"],
+      ["2/24/2026","Paid Studio","Diversified","QA Review","DONE","HIGH","Fariha Elahee; Simran Agarwal; Riad Mostofa","2/24/2026"],
+      ["2/11/2026","Paid Studio","ASG","QA Review","DONE","HIGH","Riad Mostofa","2/12/2026"]
     ];
 
     for (const row of csvData) {
