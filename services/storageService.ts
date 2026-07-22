@@ -226,6 +226,47 @@ const setupChannelListeners = (channel: RealtimeChannel) => {
     });
 };
 
+// Keeps a local cache in sync with a table via realtime, applying each
+// change directly from the payload instead of re-fetching the whole table
+// on every insert/update/delete. `users` doesn't use this - see
+// subscribeUsers for why.
+const subscribeCollection = <T extends { id: string }>(
+  table: string,
+  mapFromDB: (row: any) => T,
+  callback: (items: T[]) => void
+): (() => void) => {
+  let cache: T[] = [];
+
+  supabase.from(table).select('*').then(({ data, error }) => {
+    if (error) {
+      console.error(`Supabase Error (${table}):`, error);
+      callback([]);
+      return;
+    }
+    cache = (data || []).map(mapFromDB);
+    callback(cache);
+  });
+
+  const channel = supabase.channel(`${table}-change`)
+    .on('postgres_changes', { event: '*', schema: 'public', table }, (payload) => {
+      if (payload.eventType === 'DELETE') {
+        const deletedId = (payload.old as any)?.id;
+        if (deletedId == null) return;
+        cache = cache.filter(item => item.id !== deletedId);
+      } else {
+        const updated = mapFromDB(payload.new);
+        const idx = cache.findIndex(item => item.id === updated.id);
+        cache = idx >= 0
+          ? [...cache.slice(0, idx), updated, ...cache.slice(idx + 1)]
+          : [updated, ...cache];
+      }
+      callback(cache);
+    });
+
+  setupChannelListeners(channel);
+  return () => { supabase.removeChannel(channel); };
+};
+
 export const storageService = {
   // --- CONNECTION MONITORING ---
   onConnectionChange: (callback: (status: 'CONNECTED' | 'DISCONNECTED' | 'CONNECTING') => void) => {
@@ -259,7 +300,16 @@ export const storageService = {
   },
 
   // --- USERS ---
+  // Doesn't use subscribeCollection: on change, we deliberately re-fetch just
+  // the one changed row through users_safe rather than trusting the
+  // realtime payload directly. Realtime replicates from the WAL and isn't
+  // guaranteed to respect the column-level REVOKE on `password` the same
+  // way REST reads are, so payload.new could in principle still carry it.
+  // A single fetch-by-id (indexed, cheap) is still far less than
+  // re-fetching the whole table on every change.
   subscribeUsers: (callback: (users: User[]) => void) => {
+    let cache: User[] = [];
+
     // Reads go through users_safe (no password column) - see
     // supabase/security_hardening.sql. Writes below still target the base
     // `users` table.
@@ -272,23 +322,39 @@ export const storageService = {
        }
 
        if (data && data.length > 0) {
-          callback(data.map(mapUserFromDB));
+          cache = data.map(mapUserFromDB);
+          callback(cache);
        } else {
          // Seed mock users if empty and no error
          const seeded = MOCK_USERS.map(mapUserToDB);
          supabase.from('users').insert(seeded).then(({ error: seedError }) => {
             if (seedError) console.error("Seeding error:", seedError);
-            callback(MOCK_USERS);
+            cache = MOCK_USERS;
+            callback(cache);
          });
        }
     });
 
-    // Realtime subscription (postgres_changes only fires on the base table,
-    // which is what we want - we just re-read through the safe view)
     const channel = supabase.channel('users-change')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, payload => {
-          supabase.from('users_safe').select('*').then(({ data }) => {
-             if (data) callback(data.map(mapUserFromDB));
+          if (payload.eventType === 'DELETE') {
+            const deletedId = (payload.old as any)?.id;
+            if (deletedId == null) return;
+            cache = cache.filter(u => u.id !== deletedId);
+            callback(cache);
+            return;
+          }
+
+          const changedId = (payload.new as any)?.id;
+          if (!changedId) return;
+          supabase.from('users_safe').select('*').eq('id', changedId).maybeSingle().then(({ data }) => {
+             if (!data) return;
+             const updated = mapUserFromDB(data);
+             const idx = cache.findIndex(u => u.id === updated.id);
+             cache = idx >= 0
+               ? [...cache.slice(0, idx), updated, ...cache.slice(idx + 1)]
+               : [updated, ...cache];
+             callback(cache);
           });
       });
 
@@ -322,22 +388,7 @@ export const storageService = {
   },
 
   // --- TASKS ---
-  subscribeTasks: (callback: (tasks: Task[]) => void) => {
-    supabase.from('tasks').select('*').then(({ data }) => {
-      if (data) callback(data.map(mapTaskFromDB));
-    });
-
-    const channel = supabase.channel('tasks-change')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
-         supabase.from('tasks').select('*').then(({ data }) => {
-           if (data) callback(data.map(mapTaskFromDB));
-         });
-      });
-      
-    setupChannelListeners(channel);
-
-    return () => { supabase.removeChannel(channel); };
-  },
+  subscribeTasks: (callback: (tasks: Task[]) => void) => subscribeCollection('tasks', mapTaskFromDB, callback),
 
   addTask: async (task: Task) => {
     const { error } = await supabase.from('tasks').insert(mapTaskToDB(task));
@@ -366,22 +417,7 @@ export const storageService = {
   },
 
   // --- INVENTORY ---
-  subscribeInventories: (callback: (files: InventoryFile[]) => void) => {
-    supabase.from('inventory_files').select('*').then(({ data }) => {
-      if (data) callback(data.map(mapInventoryFromDB));
-    });
-
-    const channel = supabase.channel('inventory-change')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_files' }, () => {
-         supabase.from('inventory_files').select('*').then(({ data }) => {
-           if (data) callback(data.map(mapInventoryFromDB));
-         });
-      });
-      
-    setupChannelListeners(channel);
-      
-    return () => { supabase.removeChannel(channel); };
-  },
+  subscribeInventories: (callback: (files: InventoryFile[]) => void) => subscribeCollection('inventory_files', mapInventoryFromDB, callback),
 
   saveInventoryFile: async (file: InventoryFile) => {
     const { error } = await supabase.from('inventory_files').insert(mapInventoryToDB(file));
@@ -398,22 +434,7 @@ export const storageService = {
   },
 
   // --- INVOICES ---
-  subscribeInvoices: (callback: (invoices: Invoice[]) => void) => {
-    supabase.from('invoices').select('*').then(({ data }) => {
-      if (data) callback(data.map(mapInvoiceFromDB));
-    });
-
-    const channel = supabase.channel('invoices-change')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices' }, () => {
-         supabase.from('invoices').select('*').then(({ data }) => {
-           if (data) callback(data.map(mapInvoiceFromDB));
-         });
-      });
-
-    setupChannelListeners(channel);
-
-    return () => { supabase.removeChannel(channel); };
-  },
+  subscribeInvoices: (callback: (invoices: Invoice[]) => void) => subscribeCollection('invoices', mapInvoiceFromDB, callback),
 
   saveInvoice: async (invoice: Invoice) => {
     await supabase.from('invoices').upsert(mapInvoiceToDB(invoice));
@@ -424,60 +445,14 @@ export const storageService = {
   },
 
   // --- ESCALATIONS ---
-  subscribeEscalations: (callback: (escalations: Escalation[]) => void) => {
-    supabase.from('escalations').select('*').then(({ data }) => {
-      if (data) callback(data.map(mapEscalationFromDB));
-    });
-
-    const channel = supabase.channel('escalations-change')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'escalations' }, () => {
-         supabase.from('escalations').select('*').then(({ data }) => {
-           if (data) callback(data.map(mapEscalationFromDB));
-         });
-      });
-
-    setupChannelListeners(channel);
-
-    return () => { supabase.removeChannel(channel); };
-  },
+  subscribeEscalations: (callback: (escalations: Escalation[]) => void) => subscribeCollection('escalations', mapEscalationFromDB, callback),
 
   saveEscalation: async (esc: Escalation) => {
     await supabase.from('escalations').upsert(mapEscalationToDB(esc));
   },
 
   // --- LEAVE REQUESTS ---
-  subscribeLeaveRequests: (callback: (requests: LeaveRequest[]) => void) => {
-    console.log("Subscribing to Leave Requests...");
-    supabase.from('leave_requests').select('*').then(({ data, error }) => {
-      if (error) {
-        console.error("Supabase Error (Leave Requests Initial Fetch):", error);
-        callback([]);
-        return;
-      }
-      console.log("Initial Leave Requests Fetched:", data?.length || 0);
-      if (data) callback(data.map(mapLeaveRequestFromDB));
-    });
-
-    const channel = supabase.channel('leave-requests-change')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_requests' }, (payload) => {
-         console.log("Leave Requests Change Detected:", payload.eventType);
-         supabase.from('leave_requests').select('*').then(({ data, error }) => {
-           if (error) {
-             console.error("Supabase Error (Leave Requests Refresh):", error);
-             return;
-           }
-           console.log("Leave Requests Refreshed:", data?.length || 0);
-           if (data) callback(data.map(mapLeaveRequestFromDB));
-         });
-      });
-      
-    setupChannelListeners(channel);
-      
-    return () => { 
-      console.log("Unsubscribing from Leave Requests...");
-      supabase.removeChannel(channel); 
-    };
-  },
+  subscribeLeaveRequests: (callback: (requests: LeaveRequest[]) => void) => subscribeCollection('leave_requests', mapLeaveRequestFromDB, callback),
 
   saveLeaveRequest: async (req: LeaveRequest) => {
     console.log("Saving Leave Request:", req.id);
