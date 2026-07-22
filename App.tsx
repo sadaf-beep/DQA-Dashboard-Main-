@@ -12,6 +12,7 @@ import Login from './components/Login';
 import NotificationToast from './components/NotificationToast'; // New Component
 import { User, Task, InventoryFile, UserRole, Notification, Invoice, Escalation, EscalationMessage, TaskStatus, TaskType, InventoryStatus, TaskPriority, InventoryItem, LeaveRequest } from './types';
 import { storageService } from './services/storageService';
+import { generateId } from './services/id';
 
 // Audio Context Singleton
 let audioCtx: AudioContext | null = null;
@@ -369,7 +370,7 @@ const App: React.FC = () => {
   }, [tasks, inventories, invoices, escalations]);
 
   const addNotification = (title: string, message: string, playSound: boolean = false) => {
-    const newNotif: Notification = { id: `notif-${Date.now()}-${Math.random()}`, title, message, read: false, timestamp: Date.now() };
+    const newNotif: Notification = { id: generateId('notif'), title, message, read: false, timestamp: Date.now() };
     setNotifications(prev => {
       const newNotifs = [newNotif, ...prev];
       if (currentUser) {
@@ -488,7 +489,7 @@ const App: React.FC = () => {
   };
 
   const handleAddTask = (taskData: Omit<Task, 'id' | 'createdAt'>) => {
-    const newTask: Task = { ...taskData, id: Date.now().toString(), createdAt: Date.now() };
+    const newTask: Task = { ...taskData, id: generateId('task'), createdAt: Date.now() };
     storageService.addTask(newTask);
     // Notification handled by change detector to ensure everyone gets it
   };
@@ -616,8 +617,8 @@ const App: React.FC = () => {
 
   const handleEscalateTask = (task: Task, reason: string, link?: string) => {
     if (!currentUser) return;
-    const initialMessage: EscalationMessage = { id: `msg-${Date.now()}`, authorId: currentUser.id, authorName: currentUser.name, role: currentUser.role, text: reason, timestamp: Date.now() };
-    const escalation: Escalation = { id: `esc-${Date.now()}`, taskId: task.id, taskTitle: task.title, agentId: currentUser.id, agentName: currentUser.name, link, history: [initialMessage], status: 'PENDING', createdAt: Date.now(), updatedAt: Date.now() };
+    const initialMessage: EscalationMessage = { id: generateId('msg'), authorId: currentUser.id, authorName: currentUser.name, role: currentUser.role, text: reason, timestamp: Date.now() };
+    const escalation: Escalation = { id: generateId('esc'), taskId: task.id, taskTitle: task.title, agentId: currentUser.id, agentName: currentUser.name, link, history: [initialMessage], status: 'PENDING', createdAt: Date.now(), updatedAt: Date.now() };
     storageService.saveEscalation(escalation);
     storageService.updateTask({ ...task, isEscalated: true });
     // Notification handled by change detector
@@ -625,7 +626,7 @@ const App: React.FC = () => {
 
   const handleEscalationReply = (esc: Escalation, messageText: string) => {
     if (!currentUser) return;
-    const newMessage: EscalationMessage = { id: `msg-${Date.now()}`, authorId: currentUser.id, authorName: currentUser.name, role: currentUser.role, text: messageText, timestamp: Date.now() };
+    const newMessage: EscalationMessage = { id: generateId('msg'), authorId: currentUser.id, authorName: currentUser.name, role: currentUser.role, text: messageText, timestamp: Date.now() };
     const newStatus = currentUser.role === UserRole.MANAGER ? 'RESPONDED' : 'PENDING';
     const updatedEsc = { ...esc, history: [...esc.history, newMessage], status: newStatus as any, updatedAt: Date.now() };
     storageService.saveEscalation(updatedEsc);

@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Task, TaskStatus, TaskPriority, User, TaskType, TaskNote, TaskAttachment, UserRole, Escalation } from '../types';
 import { Button, Card, Badge } from './Common';
 import { EscalationModal } from './EscalationModal';
+import { generateId } from '../services/id';
 
 interface TaskBoardProps {
   tasks: Task[];
@@ -224,7 +225,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
   const handleAddNote = (task: Task, text: string) => {
     if (!text.trim()) return;
     const newNote: TaskNote = {
-      id: Date.now().toString(),
+      id: generateId('note'),
       authorId: currentUser.id,
       authorName: currentUser.name,
       text: text,
@@ -246,7 +247,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, users, currentUser, onAddT
     
     if (note) {
       const newNote: TaskNote = {
-        id: Date.now().toString(),
+        id: generateId('note'),
         authorId: currentUser.id,
         authorName: currentUser.name,
         text: `Status changed to ${newStatus}: ${note}`,

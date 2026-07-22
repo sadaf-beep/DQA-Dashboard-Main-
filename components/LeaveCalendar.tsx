@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { User, UserRole, LeaveRequest, LeaveType } from '../types';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Calendar as CalendarIcon, Info, BarChart2, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { generateId } from '../services/id';
 
 const BD_HOLIDAYS = [
   { name: "New Year's Day", date: '2026-01-01' },
@@ -121,7 +122,7 @@ const LeaveCalendar: React.FC<LeaveCalendarProps> = ({ currentUser, users, leave
       onUpdateLeaveRequest(updatedRequest);
     } else {
       const newRequest: LeaveRequest = {
-        id: `leave-${Date.now()}`,
+        id: generateId('leave'),
         userId: currentUser.id,
         userName: currentUser.name,
         type: leaveType,

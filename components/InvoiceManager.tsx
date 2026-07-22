@@ -2,6 +2,7 @@
 import React, { useState, useRef } from 'react';
 import { Invoice, User, UserRole, InvoiceFileMeta } from '../types';
 import { Button, Card, Badge } from './Common';
+import { generateId } from '../services/id';
 
 interface InvoiceManagerProps {
   invoices: Invoice[];
@@ -379,7 +380,7 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ invoices, currentUser, 
         const effectiveStartDate = newStartDate || new Date().toISOString().split('T')[0];
 
         const newInvoice: Invoice = {
-          id: `inv-slot-${Date.now()}`,
+          id: generateId('inv-slot'),
           referenceName: newRefName,
           status: 'PENDING',
           pdfFile: {

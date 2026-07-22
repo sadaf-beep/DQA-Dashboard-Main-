@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, UserRole, Task, TaskStatus, TaskType, InventoryFile } from '../types';
 import { Button, Card, Badge } from './Common';
+import { generateId } from '../services/id';
 
 interface AgentManagementProps {
   users: User[];
@@ -54,7 +55,7 @@ const AgentManagement: React.FC<AgentManagementProps> = ({ users, currentUser, t
   const handleSave = () => {
     if (isAddingNew) {
       const newUser: User = {
-        id: `u-${Date.now()}`,
+        id: generateId('u'),
         username: (formData.name || 'user').toLowerCase().split(' ')[0] + Math.floor(Math.random() * 1000),
         role: UserRole.AGENT,
         joiningDate: new Date().toLocaleDateString('en-GB').replace(/\//g, '.'),

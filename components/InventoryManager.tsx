@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { InventoryFile, InventoryItem, InventoryStatus, UserRole, User, Task, TaskPriority, TaskType, TaskStatus } from '../types';
 import { Button, Card, Badge } from './Common';
+import { generateId } from '../services/id';
 
 interface InventoryManagerProps {
   inventories: InventoryFile[];
@@ -231,7 +232,7 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ inventories, curren
         const getVal = (idx: number) => idx > -1 && currentLine[idx] !== undefined ? String(currentLine[idx]).trim() : '';
 
         items.push({
-          id: `inv-${Date.now()}-${i}`,
+          id: generateId('inv'),
           productId: getVal(mapping.productId),
           productName: getVal(mapping.name),
           model: getVal(mapping.model),
@@ -249,7 +250,7 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ inventories, curren
       }
 
       onUpload({
-        id: Date.now().toString(),
+        id: generateId('file'),
         fileName: file.name.replace(/\.(csv|xlsx|xls)$/, ''),
         uploadDate: Date.now(),
         rowCount: items.length,
@@ -336,7 +337,7 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ inventories, curren
       priority: TaskPriority.HIGH,
       type: taskType,
       dueDate: assignDueDate || new Date(Date.now() + 86400000).toISOString().split('T')[0],
-      notes: [{ id: `note-${Date.now()}`, authorId: currentUser.id, authorName: currentUser.name, text: 'Auto-generated from inventory workflow.', timestamp: Date.now() }],
+      notes: [{ id: generateId('note'), authorId: currentUser.id, authorName: currentUser.name, text: 'Auto-generated from inventory workflow.', timestamp: Date.now() }],
       inventoryFileId: activeInventory.id,
       inventoryItemIds: Array.from(selectedIds)
     } as any);

@@ -4,6 +4,7 @@ import { APP_NAME } from '../constants';
 import { User, UserRole } from '../types';
 import { hashPassword } from '../services/passwordService';
 import { storageService } from '../services/storageService';
+import { generateId } from '../services/id';
 
 interface LoginProps {
   users: User[];
@@ -96,7 +97,7 @@ const Login: React.FC<LoginProps> = ({ users, onLogin, onUpdateUser, onRegister 
     setIsSubmitting(true);
     try {
       const newUser: User = {
-        id: `u-${Date.now()}`,
+        id: generateId('u'),
         username: normalizedEmail.split('@')[0],
         name: fullName,
         email: normalizedEmail,
