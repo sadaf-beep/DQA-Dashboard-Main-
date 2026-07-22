@@ -3,6 +3,7 @@ import React, { useState, useRef } from 'react';
 import { Invoice, User, UserRole, InvoiceFileMeta } from '../types';
 import { Button, Card, Badge } from './Common';
 import { generateId } from '../services/id';
+import { storageService } from '../services/storageService';
 
 interface InvoiceManagerProps {
   invoices: Invoice[];
@@ -350,51 +351,46 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ invoices, currentUser, 
 
   const [showHistory, setShowHistory] = useState(false);
 
-  // Helper to read file content
-  const readFile = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      // Read PDF as DataURL (base64) to preserve binary, CSV as Text
-      if (file.type.includes('pdf') || file.name.endsWith('.pdf')) {
-          reader.readAsDataURL(file);
-      } else {
-          reader.readAsText(file);
-      }
-    });
-  };
-
   const handleCreateInvoice = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pdfFile || !newRefName) return;
 
     setIsProcessing(true);
-    
+
     try {
-        // Read file contents
-        const pdfContent = await readFile(pdfFile);
-        const csvContent = csvFile ? await readFile(csvFile) : undefined;
+        const invoiceId = generateId('inv-slot');
+
+        const pdfPath = `${invoiceId}/pdf-${pdfFile.name}`;
+        const { error: pdfError } = await storageService.uploadInvoiceFile(pdfPath, pdfFile);
+        if (pdfError) throw pdfError;
+
+        let csvMeta: InvoiceFileMeta | undefined;
+        if (csvFile) {
+          const csvPath = `${invoiceId}/csv-${csvFile.name}`;
+          const { error: csvError } = await storageService.uploadInvoiceFile(csvPath, csvFile);
+          if (csvError) throw csvError;
+          csvMeta = {
+            name: csvFile.name,
+            size: (csvFile.size / 1024 / 1024).toFixed(2) + ' MB',
+            type: 'csv',
+            storagePath: csvPath
+          };
+        }
 
         const assignee = users.find(u => u.id === newAssignee);
         const effectiveStartDate = newStartDate || new Date().toISOString().split('T')[0];
 
         const newInvoice: Invoice = {
-          id: generateId('inv-slot'),
+          id: invoiceId,
           referenceName: newRefName,
           status: 'PENDING',
           pdfFile: {
             name: pdfFile.name,
             size: (pdfFile.size / 1024 / 1024).toFixed(2) + ' MB',
             type: 'pdf',
-            content: pdfContent
+            storagePath: pdfPath
           },
-          csvFile: csvFile ? {
-            name: csvFile.name,
-            size: (csvFile.size / 1024 / 1024).toFixed(2) + ' MB',
-            type: 'csv',
-            content: csvContent
-          } : undefined,
+          csvFile: csvMeta,
           assigneeId: assignee?.id,
           assigneeName: assignee?.name,
           startDate: effectiveStartDate,
@@ -408,7 +404,7 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ invoices, currentUser, 
         resetForm();
     } catch (err) {
         console.error(err);
-        alert("Failed to read file contents.");
+        alert("Failed to upload file(s). Please try again.");
     } finally {
         setIsProcessing(false);
     }
@@ -460,7 +456,9 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ invoices, currentUser, 
     }
 
     try {
-        const finalContent = await readFile(finalFile);
+        const finalPath = `${invoice.id}/final-${finalFile.name}`;
+        const { error: uploadError } = await storageService.uploadInvoiceFile(finalPath, finalFile);
+        if (uploadError) throw uploadError;
 
         const updatedInvoice = {
           ...invoice,
@@ -470,54 +468,64 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ invoices, currentUser, 
             name: finalFile.name,
             size: (finalFile.size / 1024 / 1024).toFixed(2) + ' MB',
             type: 'csv' as const,
-            content: finalContent
+            storagePath: finalPath
           }
         };
 
         onUpdateInvoice(updatedInvoice);
-        
+
         // Clear upload state
         const newUploads = { ...agentUploads };
         delete newUploads[invoice.id];
         setAgentUploads(newUploads);
 
     } catch (err) {
-        alert("Failed to process the uploaded file.");
+        console.error(err);
+        alert("Failed to upload the final file. Please try again.");
     }
   };
 
-  const handleDownload = (file: InvoiceFileMeta) => {
-    const link = document.createElement('a');
-    link.download = file.name;
+  const handleDownload = async (file: InvoiceFileMeta) => {
+    let href: string;
+    let needsRevoke = true;
 
-    if (file.content) {
-        // If we have actual stored content, use it
+    if (file.storagePath) {
+        // Current path: file lives in Supabase Storage.
+        const { blob, error } = await storageService.downloadInvoiceFile(file.storagePath);
+        if (error || !blob) {
+            alert("Failed to download the file. Please try again.");
+            return;
+        }
+        href = URL.createObjectURL(blob);
+    } else if (file.content) {
+        // Legacy path: invoices created before the Storage migration have
+        // their content stored inline on the row.
         if (file.type === 'pdf') {
              // PDF stored as DataURL
-             link.href = file.content;
+             href = file.content;
+             needsRevoke = false;
         } else {
              // CSV stored as Text
              const blob = new Blob([file.content], { type: 'text/csv' });
-             link.href = URL.createObjectURL(blob);
+             href = URL.createObjectURL(blob);
         }
     } else {
         // Fallback Mock
-        const content = file.type === 'csv' 
+        const content = file.type === 'csv'
           ? `Reference,Date,Status,Notes\nREF-001,2024-01-01,Confirmed,Sample data from ${file.name}\nREF-002,2024-01-02,Pending,More mock data`
           : `%PDF-1.4\n%... Mock PDF content for ${file.name} ...`;
-        
+
         const blob = new Blob([content], { type: file.type === 'csv' ? 'text/csv' : 'application/pdf' });
-        link.href = URL.createObjectURL(blob);
+        href = URL.createObjectURL(blob);
     }
-    
+
+    const link = document.createElement('a');
+    link.download = file.name;
+    link.href = href;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    if (file.content && file.type === 'pdf') {
-        // DataURL, no cleanup needed
-    } else {
-        URL.revokeObjectURL(link.href);
-    }
+    if (needsRevoke) URL.revokeObjectURL(href);
   };
 
   return (

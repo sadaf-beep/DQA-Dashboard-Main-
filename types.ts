@@ -173,7 +173,12 @@ export interface InvoiceFileMeta {
   name: string;
   size: string;
   type: 'pdf' | 'csv';
-  content?: string; // Base64 or Text content
+  content?: string; // Legacy: base64/text content stored inline in the DB row.
+                     // No longer written for new uploads (see storagePath) -
+                     // kept optional so invoices created before this change
+                     // still download correctly.
+  storagePath?: string; // Path within the Supabase Storage "invoice-files"
+                         // bucket. Set for all new uploads.
 }
 
 export interface Invoice {

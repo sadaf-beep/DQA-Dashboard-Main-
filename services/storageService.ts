@@ -9,6 +9,10 @@ const SUPABASE_KEY = 'sb_publishable_bsujv14yj35PMMC-Lz5V-A_DLBWTIbs';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// Supabase Storage bucket for invoice PDFs/CSVs - see
+// supabase/invoice_storage_setup.sql for the bucket + access policies.
+const INVOICE_BUCKET = 'invoice-files';
+
 // --- HELPER MAPPERS (DB <-> App) ---
 
 // Rows read through `users_safe` (see supabase/security_hardening.sql) never
@@ -439,9 +443,22 @@ export const storageService = {
   saveInvoice: async (invoice: Invoice) => {
     await supabase.from('invoices').upsert(mapInvoiceToDB(invoice));
   },
-  
+
   deleteInvoice: async (id: string) => {
     await supabase.from('invoices').delete().eq('id', id);
+  },
+
+  // Invoice files (PDF/CSV) live in Supabase Storage, not as base64 blobs in
+  // the invoices table - see supabase/invoice_storage_setup.sql. `path` is
+  // stored on the invoice row as InvoiceFileMeta.storagePath.
+  uploadInvoiceFile: async (path: string, file: File): Promise<{ error: Error | null }> => {
+    const { error } = await supabase.storage.from(INVOICE_BUCKET).upload(path, file, { upsert: true });
+    return { error };
+  },
+
+  downloadInvoiceFile: async (path: string): Promise<{ blob: Blob | null; error: Error | null }> => {
+    const { data, error } = await supabase.storage.from(INVOICE_BUCKET).download(path);
+    return { blob: data, error };
   },
 
   // --- ESCALATIONS ---
