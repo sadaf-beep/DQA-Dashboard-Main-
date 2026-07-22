@@ -8,13 +8,22 @@
 // the entered password; this function reports back match/no-match without
 // ever returning the stored hash to the client.
 //
-// Deploy: supabase functions deploy verify-login
-// Requires the project secret SUPABASE_SERVICE_ROLE_KEY to be set:
-//   supabase secrets set SUPABASE_SERVICE_ROLE_KEY=<your service role key>
+// Deploy via CLI:   supabase functions deploy verify-login
+// Deploy via browser: Dashboard -> Edge Functions -> Deploy a new function ->
+//   "Via Editor" -> name it "verify-login" -> paste this whole file -> Deploy
+// Either way, set the secret first:
+//   CLI:     supabase secrets set SUPABASE_SERVICE_ROLE_KEY=<your service role key>
+//   Browser: Dashboard -> Edge Functions -> Secrets -> Add new secret
 
 import { createClient } from 'npm:@supabase/supabase-js@2.39.3';
 import bcrypt from 'npm:bcryptjs@3.0.3';
-import { corsHeaders } from '../_shared/cors.ts';
+
+// Inlined (rather than imported from a shared file) so this one file can be
+// pasted directly into the Supabase Dashboard's "Deploy via Editor" box.
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
 
 const BCRYPT_HASH_PATTERN = /^\$2[aby]\$\d{2}\$/;
 const isBcryptHash = (value: string | null | undefined) => !!value && BCRYPT_HASH_PATTERN.test(value);
