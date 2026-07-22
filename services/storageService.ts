@@ -11,6 +11,11 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // --- HELPER MAPPERS (DB <-> App) ---
 
+// Rows read through `users_safe` (see supabase/security_hardening.sql) never
+// include a password column at all - it's not readable by the anon key.
+// Password verification happens server-side in the verify-login edge
+// function, so `password` here is only ever populated transiently right
+// after a write we just made ourselves (e.g. saveUser), never from a read.
 const mapUserFromDB = (row: any): User => ({
   id: row.id,
   username: row.username,
@@ -23,7 +28,7 @@ const mapUserFromDB = (row: any): User => ({
   country: row.country,
   joiningDate: row.joining_date,
   payRate: row.pay_rate,
-  password: row.password // In a real app, never return passwords!
+  password: row.password
 });
 
 const mapUserToDB = (user: User) => ({
@@ -255,8 +260,10 @@ export const storageService = {
 
   // --- USERS ---
   subscribeUsers: (callback: (users: User[]) => void) => {
-    // Initial fetch
-    supabase.from('users').select('*').then(({ data, error }) => {
+    // Reads go through users_safe (no password column) - see
+    // supabase/security_hardening.sql. Writes below still target the base
+    // `users` table.
+    supabase.from('users_safe').select('*').then(({ data, error }) => {
        if (error) {
          console.error("Supabase Error (Users):", error);
          // Even on error, callback empty array so app can load
@@ -276,17 +283,29 @@ export const storageService = {
        }
     });
 
-    // Realtime subscription
+    // Realtime subscription (postgres_changes only fires on the base table,
+    // which is what we want - we just re-read through the safe view)
     const channel = supabase.channel('users-change')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, payload => {
-          supabase.from('users').select('*').then(({ data }) => {
+          supabase.from('users_safe').select('*').then(({ data }) => {
              if (data) callback(data.map(mapUserFromDB));
           });
       });
-      
+
     setupChannelListeners(channel);
 
     return () => { supabase.removeChannel(channel); };
+  },
+
+  // Password check happens server-side in the verify-login edge function -
+  // the client never reads the password column (see security_hardening.sql).
+  verifyLogin: async (userId: string, password: string): Promise<{ status: 'ok' | 'invalid' | 'not_found' | 'error'; user?: User; message?: string }> => {
+    const { data, error } = await supabase.functions.invoke('verify-login', { body: { userId, password } });
+    if (error) {
+      console.error("verify-login invoke error:", error);
+      return { status: 'error', message: error.message };
+    }
+    return data;
   },
 
   saveUser: async (user: User) => {
@@ -476,7 +495,7 @@ export const storageService = {
 
   fetchAllData: async () => {
     const [users, tasks, inventories, invoices, escalations, leaveRequests] = await Promise.all([
-      supabase.from('users').select('*'),
+      supabase.from('users_safe').select('*'),
       supabase.from('tasks').select('*'),
       supabase.from('inventory_files').select('*'),
       supabase.from('invoices').select('*'),

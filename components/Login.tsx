@@ -2,6 +2,8 @@
 import React, { useState } from 'react';
 import { APP_NAME } from '../constants';
 import { User, UserRole } from '../types';
+import { hashPassword } from '../services/passwordService';
+import { storageService } from '../services/storageService';
 
 interface LoginProps {
   users: User[];
@@ -21,7 +23,8 @@ const Login: React.FC<LoginProps> = ({ users, onLogin, onUpdateUser, onRegister 
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   // Stores the user found during password recovery
   const [recoveryUser, setRecoveryUser] = useState<User | null>(null);
 
@@ -37,7 +40,7 @@ const Login: React.FC<LoginProps> = ({ users, onLogin, onUpdateUser, onRegister 
     }
   };
 
-  const handleSignIn = (e: React.FormEvent) => {
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccess('');
@@ -45,23 +48,34 @@ const Login: React.FC<LoginProps> = ({ users, onLogin, onUpdateUser, onRegister 
     const normalizedEmail = email.toLowerCase().trim();
     const existingUser = users.find(u => u.email?.toLowerCase() === normalizedEmail || u.username === normalizedEmail);
 
-    if (existingUser) {
-      if (!existingUser.password) {
-        // First time login - Setup Password if missing
-        const updatedUser = { ...existingUser, password: password };
-        onUpdateUser(updatedUser);
-      } else if (existingUser.password === password) {
-        // Successful login
-        onLogin(existingUser, rememberMe);
-      } else {
-        setError('Incorrect password.');
-      }
-    } else {
+    if (!existingUser) {
       setError('Account not found. Please check your email or create a new account.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      // Password verification (and first-time password setup, and legacy
+      // plaintext-to-hash upgrades) all happen server-side in the
+      // verify-login edge function - the browser never reads the stored
+      // password, hashed or otherwise.
+      const result = await storageService.verifyLogin(existingUser.id, password);
+
+      if (result.status === 'ok' && result.user) {
+        onLogin(result.user, rememberMe);
+      } else if (result.status === 'invalid') {
+        setError('Incorrect password.');
+      } else if (result.status === 'not_found') {
+        setError('Account not found. Please check your email or create a new account.');
+      } else {
+        setError(result.message || 'Something went wrong verifying your login. Please try again.');
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -79,20 +93,25 @@ const Login: React.FC<LoginProps> = ({ users, onLogin, onUpdateUser, onRegister 
     // STRICT ROLE ASSIGNMENT LOGIC
     const assignedRole = normalizedEmail === 'sadaf@beamdynamics.io' ? UserRole.MANAGER : UserRole.AGENT;
 
-    const newUser: User = {
-      id: `u-${Date.now()}`,
-      username: normalizedEmail.split('@')[0],
-      name: fullName,
-      email: normalizedEmail,
-      role: assignedRole,
-      password: password,
-      phone: phone,
-      joiningDate: new Date().toLocaleDateString('en-GB').replace(/\//g, '.'),
-      payRate: 0,
-      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(fullName)}&background=random`
-    };
+    setIsSubmitting(true);
+    try {
+      const newUser: User = {
+        id: `u-${Date.now()}`,
+        username: normalizedEmail.split('@')[0],
+        name: fullName,
+        email: normalizedEmail,
+        role: assignedRole,
+        password: await hashPassword(password),
+        phone: phone,
+        joiningDate: new Date().toLocaleDateString('en-GB').replace(/\//g, '.'),
+        payRate: 0,
+        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(fullName)}&background=random`
+      };
 
-    onRegister(newUser);
+      onRegister(newUser);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleVerifyRecovery = (e: React.FormEvent) => {
@@ -120,7 +139,7 @@ const Login: React.FC<LoginProps> = ({ users, onLogin, onUpdateUser, onRegister 
       }
   };
 
-  const handleResetPassword = (e: React.FormEvent) => {
+  const handleResetPassword = async (e: React.FormEvent) => {
       e.preventDefault();
       setError('');
 
@@ -130,15 +149,20 @@ const Login: React.FC<LoginProps> = ({ users, onLogin, onUpdateUser, onRegister 
           return;
       }
 
-      const updatedUser = { ...recoveryUser, password: password };
-      onUpdateUser(updatedUser);
-      
-      setSuccess('Password has been reset successfully. Redirecting...');
-      setTimeout(() => {
-          setMode('SIGN_IN');
-          setSuccess('');
-          setPassword('');
-      }, 2000);
+      setIsSubmitting(true);
+      try {
+        const updatedUser = { ...recoveryUser, password: await hashPassword(password) };
+        onUpdateUser(updatedUser);
+
+        setSuccess('Password has been reset successfully. Redirecting...');
+        setTimeout(() => {
+            setMode('SIGN_IN');
+            setSuccess('');
+            setPassword('');
+        }, 2000);
+      } finally {
+        setIsSubmitting(false);
+      }
   };
 
   return (
@@ -300,10 +324,11 @@ const Login: React.FC<LoginProps> = ({ users, onLogin, onUpdateUser, onRegister 
                 </div>
             )}
 
-            <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30 mt-2">
-              {mode === 'SIGN_IN' ? 'Sign In' : 
-               mode === 'SIGN_UP' ? 'Create Account' : 
-               mode === 'FORGOT_PASSWORD' ? 'Verify Identity' : 
+            <button type="submit" disabled={isSubmitting} className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30 mt-2 disabled:opacity-60 disabled:cursor-not-allowed">
+              {isSubmitting ? 'Please wait...' :
+               mode === 'SIGN_IN' ? 'Sign In' :
+               mode === 'SIGN_UP' ? 'Create Account' :
+               mode === 'FORGOT_PASSWORD' ? 'Verify Identity' :
                'Reset Password'}
             </button>
             

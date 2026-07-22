@@ -2,6 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { User, UserRole } from '../types';
 import { Button, Card } from './Common';
+import { hashPassword } from '../services/passwordService';
 
 interface ProfileSettingsProps {
   user: User;
@@ -10,7 +11,10 @@ interface ProfileSettingsProps {
 
 const ProfileSettings: React.FC<ProfileSettingsProps> = ({ user, onUpdateUser }) => {
   const [formData, setFormData] = useState<Partial<User>>({ ...user });
-  const [password, setPassword] = useState(user.password || '');
+  // Always starts blank: the stored value is a hash (or, pre-migration, a
+  // legacy plaintext password) and should never be pulled back into a form
+  // field. Only a non-empty value here means "the user wants to change it".
+  const [password, setPassword] = useState('');
   const [slackWebhook, setSlackWebhook] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -25,10 +29,13 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ user, onUpdateUser })
     setIsSaving(true);
     // Mimic async save
     await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // Save User Data
-    onUpdateUser({ ...user, ...formData, password } as User);
-    
+
+    // Save User Data. Only touch the password field if the user actually
+    // typed a new one - otherwise leave the existing hash untouched.
+    const passwordUpdate = password.trim() ? { password: await hashPassword(password) } : {};
+    onUpdateUser({ ...user, ...formData, ...passwordUpdate } as User);
+    setPassword('');
+
     // Save Integration Settings
     if (slackWebhook.trim()) {
         localStorage.setItem('dqa_slack_webhook', slackWebhook.trim());
