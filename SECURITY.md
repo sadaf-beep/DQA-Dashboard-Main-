@@ -73,7 +73,9 @@ tying it to the same release, but the key won't work until it's deployed.
   columns of `users` (including phone, address, and pay rate) — and could
   set their own `role` to `MANAGER`. Fixing this properly means moving to
   real Supabase Auth so RLS policies can key off `auth.uid()` — a larger
-  migration, not a quick patch. This is the next thing being worked on.
+  migration, not a quick patch. **Deliberately on hold** while the dashboard
+  redesign is in progress, since it touches login/session handling; revisit
+  once the UI work settles.
 - **Password reset is phone-number match only**, no OTP — someone who
   knows or guesses a teammate's phone number can reset their password.
 - **Slack webhook URL** lives in `localStorage` and is posted to directly
