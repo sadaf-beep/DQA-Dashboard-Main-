@@ -20,12 +20,18 @@ the app.
   stored value.** It used to load the real password into form state on
   every visit; now the field starts blank and is only touched if the user
   types a new password.
+- **The Gemini API key is no longer in the client bundle.** `geminiService.ts`
+  now calls a `gemini-proxy` edge function instead of the `@google/genai`
+  SDK directly; the key lives only as a server-side secret. (This code path
+  wasn't wired into any UI yet, so there's no user-facing change here.)
+  `vite.config.ts` no longer injects `GEMINI_API_KEY`/`API_KEY` into the
+  build, and `@google/genai` was removed from the frontend's dependencies.
 
 ## What you need to run yourself (can't be done from here)
 
 I don't have credentials to your live Supabase project (no service-role
 key, no dashboard/CLI access), and this is a live production database used
-by your team — so these two steps need to be done by someone with access,
+by your team — so these steps need to be done by someone with access,
 **together, in the same deploy**:
 
 1. **Run `supabase/security_hardening.sql`** in the Supabase Dashboard →
@@ -40,16 +46,23 @@ by your team — so these two steps need to be done by someone with access,
    This function is the only thing left that can read the password column
    (via the service-role key, server-side) — it's what login now calls to
    check a password instead of comparing it in the browser.
+3. **Deploy the `gemini-proxy` edge function and set its secret:**
+   ```
+   supabase functions deploy gemini-proxy
+   supabase secrets set GEMINI_API_KEY=<your Gemini API key>
+   ```
+   Both edge functions can also be deployed entirely from the Dashboard
+   (Edge Functions → Deploy a new function → "Via Editor" → paste the file)
+   if you'd rather not use the CLI.
 
-**Deploy order matters:** the frontend code in this branch already expects
-both of these to exist. If you deploy the frontend without doing steps 1–2,
-or do the SQL step without deploying the function, **login will break** for
-everyone. Do all three (frontend + SQL + function) in the same release.
+**Deploy order matters for steps 1–2:** the frontend code in this branch
+already expects the SQL change and `verify-login` to exist. If you deploy
+the frontend without doing steps 1–2, or do the SQL step without deploying
+the function, **login will break** for everyone. Step 3 (Gemini) is
+independent — nothing currently calls it from the UI, so there's no urgency
+tying it to the same release, but the key won't work until it's deployed.
 
 ## Known risks *not* fixed by this pass
-
-I scoped this pass to the password/credential leak specifically. Still
-open, roughly in order of severity:
 
 - **No real per-user access control.** The app doesn't use Supabase Auth
   sessions — every browser uses the same anon key regardless of who's
@@ -60,15 +73,9 @@ open, roughly in order of severity:
   columns of `users` (including phone, address, and pay rate) — and could
   set their own `role` to `MANAGER`. Fixing this properly means moving to
   real Supabase Auth so RLS policies can key off `auth.uid()` — a larger
-  migration, not a quick patch.
-- **Gemini API key is bundled into the client** (`vite.config.ts` →
-  `process.env.API_KEY`). Anyone can view-source the deployed site and lift
-  it to burn your quota.
-- **Slack webhook URL** lives in `localStorage` and is posted to directly
-  from the browser — extractable/spoofable via dev tools.
+  migration, not a quick patch. This is the next thing being worked on.
 - **Password reset is phone-number match only**, no OTP — someone who
   knows or guesses a teammate's phone number can reset their password.
-
-Happy to take on the Gemini/Slack exposure next (same fix shape: move both
-behind edge functions), or start the bigger Supabase Auth migration if
-you'd rather close the access-control gap first — let me know which.
+- **Slack webhook URL** lives in `localStorage` and is posted to directly
+  from the browser — extractable/spoofable via dev tools. Explicitly
+  deprioritized per product decision (Slack integration isn't needed).

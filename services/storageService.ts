@@ -7,7 +7,7 @@ import { MOCK_USERS } from '../constants';
 const SUPABASE_URL = 'https://jwxkgdwegwxlqddybszp.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_bsujv14yj35PMMC-Lz5V-A_DLBWTIbs';
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // --- HELPER MAPPERS (DB <-> App) ---
 

@@ -15,6 +15,9 @@ View your app in AI Studio: https://ai.studio/apps/96e3fef6-79e8-4288-aeb3-c462b
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
+2. Run the app:
    `npm run dev`
+
+The Gemini API key is no longer a local env var - it's set as a Supabase
+Edge Function secret (`GEMINI_API_KEY`) and used only server-side by
+`supabase/functions/gemini-proxy`. See `SECURITY.md`.
