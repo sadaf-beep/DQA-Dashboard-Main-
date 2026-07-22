@@ -1,30 +1,36 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { Task, User, InventoryFile, InventoryStatus, TaskStatus, Escalation, UserRole, Notification, LeaveRequest, TaskType, TaskPriority, EscalationMessage } from '../types';
-import DashboardTracker from './DashboardTracker';
+import { Bell } from 'lucide-react';
+import { Task, User, TaskStatus, Escalation, UserRole, Notification, LeaveRequest } from '../types';
 import { EscalationModal } from './EscalationModal';
+import { StatCard, FlowBar, NeedsAttentionRow, MiniMonthCalendar } from './Common';
 
 interface DashboardViewProps {
   tasks: Task[];
   users: User[];
   currentUser: User;
-  inventories: InventoryFile[];
   escalations: Escalation[];
   leaveRequests: LeaveRequest[];
   notifications: Notification[];
+  connectionStatus: 'CONNECTED' | 'DISCONNECTED' | 'CONNECTING';
   onDismissNotification: (id: string) => void;
   onUpdateTask: (task: Task) => void;
-  onDeleteTasks: (taskIds: string[]) => void;
   onResolveEscalation: (escalation: Escalation, message: string) => void;
   onCloseEscalation: (escalation: Escalation) => void;
   onUpdateLeaveRequest: (req: LeaveRequest) => void;
 }
 
-const DashboardView: React.FC<DashboardViewProps> = ({ 
-  tasks, users, currentUser, inventories, escalations, leaveRequests, 
-  notifications, onDismissNotification, onUpdateTask, onDeleteTasks, 
-  onResolveEscalation, onCloseEscalation, onUpdateLeaveRequest 
+const DAY_MS = 86400000;
+
+const userName = (users: User[], id?: string) => users.find(u => u.id === id)?.name || 'Unassigned';
+
+const DashboardView: React.FC<DashboardViewProps> = ({
+  tasks, users, currentUser, escalations, leaveRequests,
+  notifications, connectionStatus, onDismissNotification, onUpdateTask,
+  onResolveEscalation, onCloseEscalation, onUpdateLeaveRequest
 }) => {
   const [activeEscalation, setActiveEscalation] = useState<Escalation | null>(null);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
 
   // Sync the currently open escalation modal with updates from the parent prop
   useEffect(() => {
@@ -36,61 +42,84 @@ const DashboardView: React.FC<DashboardViewProps> = ({
     }
   }, [escalations, activeEscalation]);
 
-  const statusCounts = useMemo(() => {
-    return {
-        todo: tasks.filter(t => t.status === TaskStatus.TODO).length,
-        inProgress: tasks.filter(t => t.status === TaskStatus.IN_PROGRESS).length,
-        onHold: tasks.filter(t => t.status === TaskStatus.ON_HOLD).length,
-        done: tasks.filter(t => t.status === TaskStatus.DONE).length
-    };
+  const now = Date.now();
+  const startOfToday = useMemo(() => new Date(new Date().setHours(0, 0, 0, 0)).getTime(), []);
+
+  const statusCounts = useMemo(() => ({
+    todo: tasks.filter(t => t.status === TaskStatus.TODO).length,
+    inProgress: tasks.filter(t => t.status === TaskStatus.IN_PROGRESS).length,
+    onHold: tasks.filter(t => t.status === TaskStatus.ON_HOLD).length,
+    done: tasks.filter(t => t.status === TaskStatus.DONE).length,
+  }), [tasks]);
+
+  const openTasksToday = useMemo(() => tasks.filter(t => t.createdAt >= startOfToday).length, [tasks, startOfToday]);
+
+  const activeEscalations = useMemo(() => escalations.filter(e => e.status !== 'CLOSED'), [escalations]);
+  const escalatedTaskIds = useMemo(() => new Set(activeEscalations.map(e => e.taskId)), [activeEscalations]);
+
+  const onHoldTasks = useMemo(
+    () => tasks.filter(t => t.status === TaskStatus.ON_HOLD && !escalatedTaskIds.has(t.id)),
+    [tasks, escalatedTaskIds]
+  );
+
+  const overdueTasks = useMemo(
+    () => tasks.filter(t =>
+      t.status !== TaskStatus.DONE &&
+      t.status !== TaskStatus.ON_HOLD &&
+      !escalatedTaskIds.has(t.id) &&
+      t.dueDate && new Date(t.dueDate).getTime() < startOfToday
+    ),
+    [tasks, escalatedTaskIds, startOfToday]
+  );
+
+  const needsAttentionCount = activeEscalations.length + onHoldTasks.length + overdueTasks.length;
+
+  const completedThisWeek = useMemo(
+    () => tasks.filter(t => t.status === TaskStatus.DONE && t.completedAt && t.completedAt >= now - 7 * DAY_MS).length,
+    [tasks, now]
+  );
+  const completedPrevWeek = useMemo(
+    () => tasks.filter(t => t.status === TaskStatus.DONE && t.completedAt && t.completedAt >= now - 14 * DAY_MS && t.completedAt < now - 7 * DAY_MS).length,
+    [tasks, now]
+  );
+  const completedDeltaPct = completedPrevWeek > 0 ? Math.round(((completedThisWeek - completedPrevWeek) / completedPrevWeek) * 100) : null;
+
+  const turnaround = useMemo(() => {
+    const doneWithTimes = tasks.filter(t => t.status === TaskStatus.DONE && t.completedAt);
+    if (doneWithTimes.length === 0) return { avgHours: 0, agentCount: 0 };
+    const totalHours = doneWithTimes.reduce((sum, t) => sum + (t.completedAt! - t.createdAt) / 3600000, 0);
+    const agentIds = new Set(doneWithTimes.flatMap(t => t.assigneeIds));
+    return { avgHours: totalHours / doneWithTimes.length, agentCount: agentIds.size };
   }, [tasks]);
 
-  const agentStats = useMemo(() => {
-    const stats: Record<string, { totalTasks: number; activeTasks: number; productsProcessed: number; avgTurnaround: number }> = {};
-    users.forEach(u => {
-      stats[u.id] = { totalTasks: 0, activeTasks: 0, productsProcessed: 0, avgTurnaround: 0 };
-    });
-    tasks.forEach(t => {
-      t.assigneeIds.forEach(assigneeId => {
-        if (stats[assigneeId]) {
-          if (t.status === TaskStatus.DONE) {
-              stats[assigneeId].totalTasks++;
-              if (t.completedAt && t.createdAt) {
-                  const currentAvg = stats[assigneeId].avgTurnaround;
-                  const count = stats[assigneeId].totalTasks;
-                  const durationHours = (t.completedAt - t.createdAt) / 3600000;
-                  if (count === 1) stats[assigneeId].avgTurnaround = durationHours;
-                  else stats[assigneeId].avgTurnaround = ((currentAvg * (count - 1)) + durationHours) / count;
-              }
-          } else {
-              stats[assigneeId].activeTasks++;
-          }
-        }
-      });
-    });
-    inventories.forEach(inv => {
-      inv.data.forEach(item => {
-        if (item.assigneeId && stats[item.assigneeId]) {
-          if (item.status === InventoryStatus.QA_COMPLETE || item.status === InventoryStatus.AUGMENTED) {
-            stats[item.assigneeId].productsProcessed++;
-          }
-        }
-      });
-    });
-    return stats;
-  }, [tasks, users, inventories]);
+  const dueTodayTasks = useMemo(
+    () => tasks.filter(t => {
+      if (t.status === TaskStatus.DONE || !t.dueDate) return false;
+      const d = new Date(t.dueDate).getTime();
+      return d >= startOfToday && d < startOfToday + DAY_MS;
+    }).sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
+    [tasks, startOfToday]
+  );
 
-  const activeEscalations = useMemo(() => {
-     return escalations.filter(e => e.status !== 'CLOSED');
-  }, [escalations]);
+  const pendingLeaves = useMemo(() => leaveRequests.filter(r => r.status === 'PENDING'), [leaveRequests]);
+  const myLeaves = useMemo(
+    () => leaveRequests.filter(r => r.userId === currentUser.id).sort((a, b) => b.createdAt - a.createdAt),
+    [leaveRequests, currentUser.id]
+  );
 
-  const pendingLeaves = useMemo(() => {
-    return leaveRequests.filter(r => r.status === 'PENDING');
+  const calendarEvents = useMemo(() => {
+    const map: Record<string, { colorClass: string; label?: string }[]> = {};
+    leaveRequests.filter(r => r.status === 'APPROVED' || r.status === 'PENDING').forEach(r => {
+      const start = new Date(r.startDate);
+      const end = new Date(r.endDate);
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const colorClass = r.status === 'APPROVED' ? 'bg-accent' : 'bg-warning';
+        (map[key] ||= []).push({ colorClass, label: `${r.userName} (${r.type})` });
+      }
+    });
+    return map;
   }, [leaveRequests]);
-
-  const myLeaves = useMemo(() => {
-    return leaveRequests.filter(r => r.userId === currentUser.id).sort((a, b) => b.createdAt - a.createdAt);
-  }, [leaveRequests, currentUser.id]);
 
   const handleEscalationReply = (message: string) => {
       if (activeEscalation) onResolveEscalation(activeEscalation, message);
@@ -103,262 +132,228 @@ const DashboardView: React.FC<DashboardViewProps> = ({
       }
   };
 
+  const escalationMeta = (esc: Escalation): { meta: string; action: { label: string; emphasis: boolean } } => {
+    const isMyTurn = currentUser.role === UserRole.MANAGER ? esc.status === 'PENDING' : esc.status === 'RESPONDED';
+    if (isMyTurn) {
+      return { meta: `${esc.agentName} · waiting on you`, action: { label: 'Respond', emphasis: true } };
+    }
+    return { meta: `${esc.agentName} · ${esc.status === 'PENDING' ? 'waiting on manager' : 'you replied'}`, action: { label: 'View', emphasis: false } };
+  };
+
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    return hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  }, []);
+
   return (
-    <div className="flex flex-col h-full space-y-6 pb-8">
-       <div className="flex justify-between items-center mb-1">
-          <div>
-            <h2 className="text-2xl font-bold text-slate-900">Dashboard</h2>
-            <p className="text-sm text-slate-500">Overview of team performance and task status.</p>
-          </div>
-       </div>
-
-       {currentUser.role === UserRole.AGENT && notifications.length > 0 && (
-         <div className="bg-white rounded-xl shadow-sm border border-blue-100 p-4 mb-4">
-            <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
-               <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-               New Notifications
-            </h3>
-            <div className="space-y-2">
-               {notifications.map(notif => (
-                  <div key={notif.id} className="flex items-start justify-between p-3 bg-blue-50/50 rounded-lg border border-blue-100">
-                     <div>
-                        <p className="text-sm font-bold text-slate-800">{notif.title}</p>
-                        <p className="text-xs text-slate-600 mt-0.5">{notif.message}</p>
-                        <p className="text-[10px] text-slate-400 mt-1">{new Date(notif.timestamp).toLocaleTimeString()}</p>
-                     </div>
-                     <button onClick={() => onDismissNotification(notif.id)} className="text-slate-400 hover:text-slate-600 p-1">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                     </button>
+    <div className="flex flex-col h-full gap-4">
+      <div className="flex justify-between items-end">
+        <div>
+          <h2 className="text-[21px] font-bold text-ink tracking-tight">{greeting}, {currentUser.name.split(' ')[0]}</h2>
+          <p className="text-xs text-ink-muted mt-0.5">
+            {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+            {' · '}
+            <span className={connectionStatus === 'CONNECTED' ? 'text-success-text font-semibold' : 'text-ink-muted'}>
+              {connectionStatus === 'CONNECTED' ? 'Live Sync' : connectionStatus === 'CONNECTING' ? 'Connecting…' : 'Offline'}
+            </span>
+          </p>
+        </div>
+        <div className="relative">
+          <button
+            onClick={() => setShowNotifications(v => !v)}
+            className="w-[34px] h-[34px] rounded-lg bg-surface border border-slate-200 flex items-center justify-center text-ink-secondary relative hover:bg-slate-50"
+          >
+            <Bell className="w-4 h-4" />
+            {notifications.length > 0 && (
+              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-danger" />
+            )}
+          </button>
+          {showNotifications && (
+            <div className="absolute right-0 mt-2 w-80 bg-surface rounded-card shadow-lg border border-slate-200 z-20 max-h-96 overflow-y-auto">
+              {notifications.length === 0 ? (
+                <div className="p-4 text-center text-ink-muted text-xs italic">No new notifications.</div>
+              ) : notifications.map(n => (
+                <div key={n.id} className="p-3 border-b border-slate-100 last:border-0 flex justify-between items-start gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-ink">{n.title}</p>
+                    <p className="text-[11px] text-ink-secondary mt-0.5">{n.message}</p>
                   </div>
-               ))}
+                  <button onClick={() => onDismissNotification(n.id)} className="text-ink-muted hover:text-ink text-xs flex-shrink-0">✕</button>
+                </div>
+              ))}
             </div>
-         </div>
-       )}
+          )}
+        </div>
+      </div>
 
-       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-               <div>
-                   <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">To Do</p>
-                   <p className="text-2xl font-bold text-slate-800">{statusCounts.todo}</p>
-               </div>
-               <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center">
-                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 002-2h2a2 2 0 002 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
-               </div>
-           </div>
-           <div className="bg-white p-4 rounded-xl border border-blue-100 shadow-sm flex items-center justify-between">
-               <div>
-                   <p className="text-xs font-bold text-blue-500 uppercase tracking-wide">In Progress</p>
-                   <p className="text-2xl font-bold text-blue-700">{statusCounts.inProgress}</p>
-               </div>
-               <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
-                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-               </div>
-           </div>
-           <div className="bg-white p-4 rounded-xl border border-amber-100 shadow-sm flex items-center justify-between">
-               <div>
-                   <p className="text-xs font-bold text-amber-500 uppercase tracking-wide">On Hold</p>
-                   <p className="text-2xl font-bold text-amber-700">{statusCounts.onHold}</p>
-               </div>
-               <div className="w-10 h-10 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center">
-                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-               </div>
-           </div>
-           <div className="bg-white p-4 rounded-xl border border-emerald-100 shadow-sm flex items-center justify-between">
-               <div>
-                   <p className="text-xs font-bold text-emerald-500 uppercase tracking-wide">Completed</p>
-                   <p className="text-2xl font-bold text-emerald-700">{statusCounts.done}</p>
-               </div>
-               <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-               </div>
-           </div>
-       </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard label="Open Tasks" value={statusCounts.todo + statusCounts.inProgress + statusCounts.onHold}
+          delta={openTasksToday > 0 ? { text: `+${openTasksToday} today`, tone: 'success' } : undefined} />
+        <StatCard label="Needs Attention" value={needsAttentionCount} tone={needsAttentionCount > 0 ? 'danger' : 'default'}
+          delta={overdueTasks.length > 0 ? { text: `${overdueTasks.length} overdue`, tone: 'danger' } : undefined}
+          subtext={`${activeEscalations.length} escalation${activeEscalations.length === 1 ? '' : 's'} · ${onHoldTasks.length} on hold`} />
+        <StatCard label="Completed This Week" value={completedThisWeek}
+          delta={completedDeltaPct !== null ? { text: `${completedDeltaPct >= 0 ? '▲' : '▼'} ${Math.abs(completedDeltaPct)}%`, tone: completedDeltaPct >= 0 ? 'success' : 'danger' } : undefined} />
+        <StatCard label="Avg Turnaround" value={`${turnaround.avgHours.toFixed(1)}h`}
+          subtext={`across ${turnaround.agentCount} agent${turnaround.agentCount === 1 ? '' : 's'}`} />
+      </div>
 
-       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-           {/* Escalations */}
-           <div className="bg-white rounded-xl shadow-sm border border-red-100 p-5 flex flex-col">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                  <div className="p-1.5 bg-red-100 rounded text-red-600">
-                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                  </div>
-                  Active Escalations
-                </h3>
-                <span className="text-xs font-bold bg-red-500 text-white px-2 py-1 rounded-full">{activeEscalations.length}</span>
-              </div>
-              <div className="flex-1 overflow-y-auto max-h-48 space-y-2 pr-1 custom-scrollbar">
-                 {activeEscalations.length === 0 ? (
-                   <div className="text-center py-8 text-slate-400 italic text-sm">No active escalations.</div>
-                 ) : (
-                   activeEscalations.map(esc => (
-                     <div key={esc.id} className="p-3 bg-red-50 border border-red-100 rounded-lg flex justify-between items-center cursor-pointer hover:bg-red-100 transition-colors" onClick={() => setActiveEscalation(esc)}>
-                        <div className="flex-1 min-w-0 mr-4">
-                           <p className="text-sm font-bold text-slate-800 truncate">{esc.taskTitle}</p>
-                           <div className="flex items-center gap-2 mt-1">
-                               <p className="text-xs text-red-600 flex items-center gap-1">
-                                   {esc.status === 'PENDING' ? 'Waiting on Manager' : 'Response Sent'}
-                                   {esc.status === 'PENDING' && <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>}
-                               </p>
-                               <span className="text-[10px] text-slate-400">•</span>
-                               <p className="text-xs text-slate-500 truncate max-w-md italic">"{esc.history[esc.history.length-1].text}"</p>
-                           </div>
-                        </div>
-                        <div className="text-right flex-shrink-0">
-                           <p className="text-xs font-semibold text-slate-600">{esc.agentName}</p>
-                           <span className="text-[10px] text-blue-600 underline">View Discussion</span>
-                        </div>
-                     </div>
-                   ))
-                 )}
-              </div>
-           </div>
+      <div className="grid grid-cols-1 lg:grid-cols-[1.7fr_1fr] gap-4 flex-1 overflow-hidden">
+        <div className="flex flex-col gap-4 overflow-y-auto pr-0.5">
+          <div className={`bg-surface rounded-card p-4 shadow-sm ${needsAttentionCount > 0 ? 'border border-danger-bg' : ''}`}>
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-sm font-bold text-ink">Needs Attention</h3>
+            </div>
+            <div className="flex flex-col gap-2">
+              {needsAttentionCount === 0 && (
+                <div className="text-center py-6 text-ink-muted italic text-sm">Nothing needs attention right now.</div>
+              )}
+              {activeEscalations.map(esc => {
+                const { meta, action } = escalationMeta(esc);
+                return (
+                  <NeedsAttentionRow
+                    key={esc.id}
+                    chip={{ label: 'ESCALATED', tone: 'danger' }}
+                    title={esc.taskTitle}
+                    meta={meta}
+                    onClick={() => setActiveEscalation(esc)}
+                    action={{ ...action, onClick: () => setActiveEscalation(esc) }}
+                  />
+                );
+              })}
+              {onHoldTasks.map(task => {
+                const daysAgo = Math.floor((now - task.createdAt) / DAY_MS);
+                return (
+                  <NeedsAttentionRow
+                    key={task.id}
+                    chip={{ label: 'ON HOLD', tone: 'warning' }}
+                    title={task.title}
+                    meta={`${task.assigneeIds.map(id => userName(users, id)).join(', ') || 'Unassigned'} · created ${daysAgo}d ago`}
+                    action={{ label: 'Resume', emphasis: false, onClick: () => onUpdateTask({ ...task, status: TaskStatus.IN_PROGRESS }) }}
+                  />
+                );
+              })}
+              {overdueTasks.map(task => {
+                const daysOverdue = Math.floor((now - new Date(task.dueDate).getTime()) / DAY_MS);
+                return (
+                  <NeedsAttentionRow
+                    key={task.id}
+                    chip={{ label: 'OVERDUE', tone: 'danger' }}
+                    title={task.title}
+                    meta={`${daysOverdue}d overdue · ${task.assigneeIds.map(id => userName(users, id)).join(', ') || 'Unassigned'}`}
+                  />
+                );
+              })}
+            </div>
+          </div>
 
-           {/* Leave Requests (Manager Only) */}
-           {currentUser.role === UserRole.MANAGER && (
-             <div className="bg-white rounded-xl shadow-sm border border-amber-100 p-5 flex flex-col">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                    <div className="p-1.5 bg-amber-100 rounded text-amber-600">
-                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                    </div>
-                    Pending Leave Requests
-                  </h3>
-                  <span className="text-xs font-bold bg-amber-500 text-white px-2 py-1 rounded-full">{pendingLeaves.length}</span>
-                </div>
-                <div className="flex-1 overflow-y-auto max-h-48 space-y-2 pr-1 custom-scrollbar">
-                   {pendingLeaves.length === 0 ? (
-                     <div className="text-center py-8 text-slate-400 italic text-sm">No pending leave requests.</div>
-                   ) : (
-                     pendingLeaves.map(req => (
-                       <div key={req.id} className="p-3 bg-amber-50 border border-amber-100 rounded-lg flex justify-between items-center">
-                          <div className="flex-1 min-w-0 mr-4">
-                             <p className="text-sm font-bold text-slate-800 truncate">{req.userName}</p>
-                             <div className="flex items-center gap-2 mt-1">
-                                 <p className="text-xs text-amber-700 font-medium">{req.type}</p>
-                                 <span className="text-[10px] text-slate-400">•</span>
-                                 <p className="text-[10px] text-slate-500">{req.startDate} to {req.endDate}</p>
-                             </div>
-                          </div>
-                          <div className="flex gap-2">
-                             <button 
-                                onClick={() => onUpdateLeaveRequest({ ...req, status: 'APPROVED' })}
-                                className="p-1.5 bg-white text-emerald-600 rounded-md border border-emerald-100 hover:bg-emerald-50 transition-colors"
-                                title="Approve"
-                             >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                             </button>
-                             <button 
-                                onClick={() => onUpdateLeaveRequest({ ...req, status: 'REJECTED' })}
-                                className="p-1.5 bg-white text-red-600 rounded-md border border-red-100 hover:bg-red-50 transition-colors"
-                                title="Reject"
-                             >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                             </button>
-                          </div>
-                       </div>
-                     ))
-                   )}
-                </div>
-             </div>
-           )}
-
-           {/* My Leave Requests (Agent Only) */}
-           {currentUser.role === UserRole.AGENT && (
-             <div className="bg-white rounded-xl shadow-sm border border-blue-100 p-5 flex flex-col">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                    <div className="p-1.5 bg-blue-100 rounded text-blue-600">
-                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                    </div>
-                    My Leave Requests
-                  </h3>
-                  <span className="text-xs font-bold bg-blue-500 text-white px-2 py-1 rounded-full">{myLeaves.length}</span>
-                </div>
-                <div className="flex-1 overflow-y-auto max-h-48 space-y-2 pr-1 custom-scrollbar">
-                   {myLeaves.length === 0 ? (
-                     <div className="text-center py-8 text-slate-400 italic text-sm">No leave requests submitted.</div>
-                   ) : (
-                     myLeaves.map(req => (
-                       <div key={req.id} className="p-3 bg-blue-50 border border-blue-100 rounded-lg flex justify-between items-center">
-                          <div className="flex-1 min-w-0 mr-4">
-                             <p className="text-sm font-bold text-slate-800 truncate">{req.type}</p>
-                             <div className="flex items-center gap-2 mt-1">
-                                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${req.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700' : req.status === 'REJECTED' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
-                                   {req.status}
-                                 </span>
-                                 <span className="text-[10px] text-slate-400">•</span>
-                                 <p className="text-[10px] text-slate-500">{req.startDate} to {req.endDate}</p>
-                             </div>
-                          </div>
-                          <div className="text-right">
-                             <p className="text-[10px] text-slate-400 italic">Manage in Leave tab</p>
-                          </div>
-                       </div>
-                     ))
-                   )}
-                </div>
-             </div>
-           )}
+          <div className="bg-surface rounded-card p-4 shadow-sm flex-1 flex flex-col overflow-hidden">
+            <h3 className="text-sm font-bold text-ink mb-3">Task Flow</h3>
+            <FlowBar
+              height={22}
+              segments={[
+                { label: 'To Do', count: statusCounts.todo, colorClass: 'bg-[#c9d2e6]' },
+                { label: 'In Progress', count: statusCounts.inProgress, colorClass: 'bg-accent' },
+                { label: 'On Hold', count: statusCounts.onHold, colorClass: 'bg-warning' },
+                { label: 'Done', count: statusCounts.done, colorClass: 'bg-success' },
+              ]}
+            />
+            <div className="text-[11.5px] font-bold text-ink-muted uppercase tracking-wide mt-5 mb-2">Due Today</div>
+            <div className="flex-1 overflow-y-auto">
+              {dueTodayTasks.length === 0 ? (
+                <div className="text-ink-muted text-xs italic py-2">Nothing due today.</div>
+              ) : dueTodayTasks.map(task => (
+                <button
+                  key={task.id}
+                  onClick={() => onUpdateTask({ ...task, status: TaskStatus.DONE, completedAt: Date.now() })}
+                  className="flex items-center gap-2.5 py-2 border-b border-slate-100 last:border-0 w-full text-left group"
+                >
+                  <span className="w-[15px] h-[15px] rounded-full border-2 border-slate-300 flex-shrink-0 group-hover:border-accent transition-colors" />
+                  <span className="text-[12.5px] font-semibold text-ink">{task.title}</span>
+                  <span className="ml-auto text-[11px] text-ink-muted">Due today</span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
-       {currentUser.role === UserRole.MANAGER && (
-         <div>
-            <div className="flex justify-between items-center mb-3">
-                <h3 className="text-lg font-bold text-slate-800">Agent Performance Overview</h3>
+        <div className="flex flex-col gap-4 overflow-y-auto pr-0.5">
+          {currentUser.role === UserRole.MANAGER && (
+            <div className="bg-surface rounded-card p-4 shadow-sm">
+              <div className="flex justify-between items-center mb-2.5">
+                <h3 className="text-sm font-bold text-ink">Pending Leave</h3>
+                {pendingLeaves.length > 0 && (
+                  <span className="text-[10.5px] font-bold text-white bg-warning px-2 py-0.5 rounded-full">{pendingLeaves.length}</span>
+                )}
+              </div>
+              <div className="flex flex-col gap-2 max-h-40 overflow-y-auto">
+                {pendingLeaves.length === 0 ? (
+                  <div className="text-ink-muted text-xs italic py-2">No pending leave requests.</div>
+                ) : pendingLeaves.map(req => (
+                  <div key={req.id} className="bg-warning-bg rounded-lg px-3 py-2 flex justify-between items-center">
+                    <div>
+                      <div className="text-[12.5px] font-bold text-ink">{req.userName}</div>
+                      <div className="text-[11px] text-warning-text mt-0.5">{req.type} · {req.startDate} to {req.endDate}</div>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button onClick={() => onUpdateLeaveRequest({ ...req, status: 'APPROVED' })} className="w-6 h-6 rounded-md bg-white border border-emerald-100 text-success-text flex items-center justify-center text-xs">✓</button>
+                      <button onClick={() => onUpdateLeaveRequest({ ...req, status: 'REJECTED' })} className="w-6 h-6 rounded-md bg-white border border-red-100 text-danger-text flex items-center justify-center text-xs">✕</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-               {users.filter(u => u.role !== 'MANAGER').map(u => {
-                 const stats = agentStats[u.id];
-                 return (
-                   <div key={u.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-3 relative group">
-                      <div className="flex items-center gap-4">
-                         <div className="relative">
-                            {u.avatar ? (
-                               <img src={u.avatar} alt={u.name} className="w-12 h-12 rounded-full border border-slate-200" />
-                            ) : (
-                               <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-lg">{u.name.charAt(0)}</div>
-                            )}
-                            <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${stats.activeTasks > 0 ? 'bg-green-500' : 'bg-slate-300'}`}></div>
-                         </div>
-                         <div className="flex-1 min-w-0">
-                            <h4 className="font-bold text-slate-800 truncate">{u.name}</h4>
-                            <p className="text-xs text-slate-500 truncate">{u.country || 'Unknown Location'}</p>
-                         </div>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100">
-                         <div className="text-center">
-                              <span className="block text-sm font-bold text-slate-800">{stats.activeTasks}</span>
-                              <span className="block text-[10px] text-slate-400">Tasks</span>
-                         </div>
-                         <div className="text-center border-l border-slate-100">
-                              <span className="block text-sm font-bold text-slate-800">{stats.productsProcessed}</span>
-                              <span className="block text-[10px] text-slate-400">Prods</span>
-                         </div>
-                         <div className="text-center border-l border-slate-100">
-                              <span className="block text-sm font-bold text-slate-800">{stats.avgTurnaround.toFixed(1)}h</span>
-                              <span className="block text-[10px] text-slate-400">Avg Time</span>
-                         </div>
-                      </div>
-                   </div>
-                 );
-               })}
+          )}
+
+          {currentUser.role === UserRole.AGENT && (
+            <div className="bg-surface rounded-card p-4 shadow-sm">
+              <div className="flex justify-between items-center mb-2.5">
+                <h3 className="text-sm font-bold text-ink">My Leave Requests</h3>
+                <span className="text-[10.5px] font-bold text-white bg-accent px-2 py-0.5 rounded-full">{myLeaves.length}</span>
+              </div>
+              <div className="flex flex-col gap-2 max-h-40 overflow-y-auto">
+                {myLeaves.length === 0 ? (
+                  <div className="text-ink-muted text-xs italic py-2">No leave requests submitted.</div>
+                ) : myLeaves.map(req => (
+                  <div key={req.id} className="bg-slate-50 rounded-lg px-3 py-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[12.5px] font-bold text-ink">{req.type}</span>
+                      <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded ${
+                        req.status === 'APPROVED' ? 'bg-success-bg text-success-text' :
+                        req.status === 'REJECTED' ? 'bg-danger-bg text-danger-text' : 'bg-warning-bg text-warning-text'
+                      }`}>{req.status}</span>
+                    </div>
+                    <div className="text-[11px] text-ink-muted mt-0.5">{req.startDate} to {req.endDate}</div>
+                  </div>
+                ))}
+              </div>
             </div>
-         </div>
-       )}
+          )}
 
-       <div className="flex-1 min-h-[500px]">
-          <DashboardTracker tasks={tasks} users={users} currentUser={currentUser} onUpdateTask={onUpdateTask} onDeleteTasks={onDeleteTasks} />
-       </div>
+          <div className="bg-surface rounded-card p-4 shadow-sm flex-1">
+            <MiniMonthCalendar
+              month={calendarMonth}
+              onPrevMonth={() => setCalendarMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
+              onNextMonth={() => setCalendarMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
+              events={calendarEvents}
+            />
+            <div className="flex gap-3 text-[10px] text-ink-muted mt-3">
+              <span className="flex items-center gap-1"><span className="w-3.5 h-3.5 rounded-full bg-accent inline-block" /> Today</span>
+              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-warning inline-block" /> Pending leave</span>
+            </div>
+          </div>
+        </div>
+      </div>
 
-       {activeEscalation && (
-           <EscalationModal 
-               escalation={activeEscalation}
-               currentUser={currentUser}
-               onClose={() => setActiveEscalation(null)}
-               onReply={handleEscalationReply}
-               onResolveClose={handleEscalationClose}
-           />
-       )}
+      {activeEscalation && (
+          <EscalationModal
+              escalation={activeEscalation}
+              currentUser={currentUser}
+              onClose={() => setActiveEscalation(null)}
+              onReply={handleEscalationReply}
+              onResolveClose={handleEscalationClose}
+          />
+      )}
     </div>
   );
 };

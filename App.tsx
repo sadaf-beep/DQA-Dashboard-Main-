@@ -504,16 +504,6 @@ const App: React.FC = () => {
     }
   };
 
-  const handleDeleteTasks = (taskIds: string[]) => {
-    // Permanently delete multiple tasks from DB (used by Daily Tracker)
-    setTasks(prev => prev.filter(t => !taskIds.includes(t.id)));
-    if (storageService.deleteTasks) {
-      storageService.deleteTasks(taskIds);
-    } else {
-      taskIds.forEach(id => storageService.deleteTask(id));
-    }
-  };
-
   const handleInventoryUpload = (file: InventoryFile) => {
     storageService.saveInventoryFile(file);
   };
@@ -703,19 +693,18 @@ const App: React.FC = () => {
       <main className="flex-1 ml-64 p-8 h-screen overflow-hidden flex flex-col">
         <div className="flex-1 overflow-auto w-full pb-8">
           {activeTab === 'dashboard' && (
-            <DashboardView 
-              tasks={tasks} 
-              users={users} 
-              currentUser={effectiveUser} 
-              inventories={inventories} 
-              escalations={escalations} 
+            <DashboardView
+              tasks={tasks}
+              users={users}
+              currentUser={effectiveUser}
+              escalations={escalations}
               leaveRequests={leaveRequests}
-              notifications={notifications} 
-              onDismissNotification={dismissNotification} 
-              onUpdateTask={handleTaskUpdate} 
-              onDeleteTasks={handleDeleteTasks} 
-              onResolveEscalation={handleEscalationReply} 
-              onCloseEscalation={handleCloseEscalation} 
+              notifications={notifications}
+              connectionStatus={connectionStatus}
+              onDismissNotification={dismissNotification}
+              onUpdateTask={handleTaskUpdate}
+              onResolveEscalation={handleEscalationReply}
+              onCloseEscalation={handleCloseEscalation}
               onUpdateLeaveRequest={handleUpdateLeaveRequest}
             />
           )}

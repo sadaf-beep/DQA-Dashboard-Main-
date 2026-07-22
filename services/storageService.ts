@@ -414,12 +414,6 @@ export const storageService = {
     await supabase.from('tasks').delete().eq('id', id);
   },
 
-  deleteTasks: async (ids: string[]) => {
-    if (ids.length === 0) return;
-    const { error } = await supabase.from('tasks').delete().in('id', ids);
-    if (error) console.error("Error batch deleting tasks:", error);
-  },
-
   // --- INVENTORY ---
   subscribeInventories: (callback: (files: InventoryFile[]) => void) => subscribeCollection('inventory_files', mapInventoryFromDB, callback),
 
