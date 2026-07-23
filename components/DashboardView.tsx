@@ -17,7 +17,10 @@ interface DashboardViewProps {
   onResolveEscalation: (escalation: Escalation, message: string) => void;
   onCloseEscalation: (escalation: Escalation) => void;
   onUpdateLeaveRequest: (req: LeaveRequest) => void;
+  onNavigateToTasks: () => void;
 }
+
+const MAX_NEEDS_ATTENTION_ROWS = 6;
 
 const DAY_MS = 86400000;
 
@@ -26,7 +29,7 @@ const userName = (users: User[], id?: string) => users.find(u => u.id === id)?.n
 const DashboardView: React.FC<DashboardViewProps> = ({
   tasks, users, currentUser, escalations, leaveRequests,
   notifications, connectionStatus, onDismissNotification, onUpdateTask,
-  onResolveEscalation, onCloseEscalation, onUpdateLeaveRequest
+  onResolveEscalation, onCloseEscalation, onUpdateLeaveRequest, onNavigateToTasks
 }) => {
   const [activeEscalation, setActiveEscalation] = useState<Escalation | null>(null);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -68,11 +71,28 @@ const DashboardView: React.FC<DashboardViewProps> = ({
       t.status !== TaskStatus.ON_HOLD &&
       !escalatedTaskIds.has(t.id) &&
       t.dueDate && new Date(t.dueDate).getTime() < startOfToday
-    ),
+    ).sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()), // most overdue first
     [tasks, escalatedTaskIds, startOfToday]
   );
 
   const needsAttentionCount = activeEscalations.length + onHoldTasks.length + overdueTasks.length;
+
+  // Escalations are genuine emergencies so all of them get a row; overdue
+  // (sorted worst-first) and on-hold fill whatever room is left. At real
+  // scale "needs attention" can be dozens of items - a flat unbounded list
+  // is not a dashboard, it's a wall of red. Cap it and point to Task Board
+  // for the rest.
+  type NeedsAttentionItem =
+    | { kind: 'escalation'; esc: Escalation }
+    | { kind: 'overdue'; task: Task }
+    | { kind: 'onhold'; task: Task };
+  const needsAttentionItems = useMemo<NeedsAttentionItem[]>(() => [
+    ...activeEscalations.map((esc): NeedsAttentionItem => ({ kind: 'escalation', esc })),
+    ...overdueTasks.map((task): NeedsAttentionItem => ({ kind: 'overdue', task })),
+    ...onHoldTasks.map((task): NeedsAttentionItem => ({ kind: 'onhold', task })),
+  ], [activeEscalations, overdueTasks, onHoldTasks]);
+  const visibleNeedsAttention = needsAttentionItems.slice(0, MAX_NEEDS_ATTENTION_ROWS);
+  const hiddenNeedsAttentionCount = needsAttentionItems.length - visibleNeedsAttention.length;
 
   const completedThisWeek = useMemo(
     () => tasks.filter(t => t.status === TaskStatus.DONE && t.completedAt && t.completedAt >= now - 7 * DAY_MS).length,
@@ -208,42 +228,50 @@ const DashboardView: React.FC<DashboardViewProps> = ({
               {needsAttentionCount === 0 && (
                 <div className="text-center py-6 text-ink-muted italic text-sm">Nothing needs attention right now.</div>
               )}
-              {activeEscalations.map(esc => {
-                const { meta, action } = escalationMeta(esc);
+              {visibleNeedsAttention.map(item => {
+                if (item.kind === 'escalation') {
+                  const { meta, action } = escalationMeta(item.esc);
+                  return (
+                    <NeedsAttentionRow
+                      key={`esc-${item.esc.id}`}
+                      chip={{ label: 'ESCALATED', tone: 'danger' }}
+                      title={item.esc.taskTitle}
+                      meta={meta}
+                      onClick={() => setActiveEscalation(item.esc)}
+                      action={{ ...action, onClick: () => setActiveEscalation(item.esc) }}
+                    />
+                  );
+                }
+                if (item.kind === 'onhold') {
+                  const daysAgo = Math.floor((now - item.task.createdAt) / DAY_MS);
+                  return (
+                    <NeedsAttentionRow
+                      key={`hold-${item.task.id}`}
+                      chip={{ label: 'ON HOLD', tone: 'warning' }}
+                      title={item.task.title}
+                      meta={`${item.task.assigneeIds.map(id => userName(users, id)).join(', ') || 'Unassigned'} · created ${daysAgo}d ago`}
+                      action={{ label: 'Resume', emphasis: false, onClick: () => onUpdateTask({ ...item.task, status: TaskStatus.IN_PROGRESS }) }}
+                    />
+                  );
+                }
+                const daysOverdue = Math.floor((now - new Date(item.task.dueDate).getTime()) / DAY_MS);
                 return (
                   <NeedsAttentionRow
-                    key={esc.id}
-                    chip={{ label: 'ESCALATED', tone: 'danger' }}
-                    title={esc.taskTitle}
-                    meta={meta}
-                    onClick={() => setActiveEscalation(esc)}
-                    action={{ ...action, onClick: () => setActiveEscalation(esc) }}
+                    key={`overdue-${item.task.id}`}
+                    chip={{ label: 'OVERDUE', tone: 'warning' }}
+                    title={item.task.title}
+                    meta={`${daysOverdue}d overdue · ${item.task.assigneeIds.map(id => userName(users, id)).join(', ') || 'Unassigned'}`}
                   />
                 );
               })}
-              {onHoldTasks.map(task => {
-                const daysAgo = Math.floor((now - task.createdAt) / DAY_MS);
-                return (
-                  <NeedsAttentionRow
-                    key={task.id}
-                    chip={{ label: 'ON HOLD', tone: 'warning' }}
-                    title={task.title}
-                    meta={`${task.assigneeIds.map(id => userName(users, id)).join(', ') || 'Unassigned'} · created ${daysAgo}d ago`}
-                    action={{ label: 'Resume', emphasis: false, onClick: () => onUpdateTask({ ...task, status: TaskStatus.IN_PROGRESS }) }}
-                  />
-                );
-              })}
-              {overdueTasks.map(task => {
-                const daysOverdue = Math.floor((now - new Date(task.dueDate).getTime()) / DAY_MS);
-                return (
-                  <NeedsAttentionRow
-                    key={task.id}
-                    chip={{ label: 'OVERDUE', tone: 'danger' }}
-                    title={task.title}
-                    meta={`${daysOverdue}d overdue · ${task.assigneeIds.map(id => userName(users, id)).join(', ') || 'Unassigned'}`}
-                  />
-                );
-              })}
+              {hiddenNeedsAttentionCount > 0 && (
+                <button
+                  onClick={onNavigateToTasks}
+                  className="text-[12px] font-semibold text-accent hover:underline text-left pt-1"
+                >
+                  + {hiddenNeedsAttentionCount} more → View in Task Board
+                </button>
+              )}
             </div>
           </div>
 

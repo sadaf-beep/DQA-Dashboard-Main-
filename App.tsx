@@ -706,6 +706,7 @@ const App: React.FC = () => {
               onResolveEscalation={handleEscalationReply}
               onCloseEscalation={handleCloseEscalation}
               onUpdateLeaveRequest={handleUpdateLeaveRequest}
+              onNavigateToTasks={() => setActiveTab('tasks')}
             />
           )}
           {activeTab === 'tasks' && (
