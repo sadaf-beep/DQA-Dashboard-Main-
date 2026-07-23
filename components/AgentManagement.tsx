@@ -1,7 +1,7 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { User, UserRole, Task, TaskStatus, TaskType, InventoryFile } from '../types';
-import { Button, Card, Badge } from './Common';
+import { Button, Badge, PillSegmentedControl } from './Common';
 import { generateId } from '../services/id';
 
 interface AgentManagementProps {
@@ -20,6 +20,8 @@ const AgentManagement: React.FC<AgentManagementProps> = ({ users, currentUser, t
   const [isEditing, setIsEditing] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<User>>({});
+  const [searchQuery, setSearchQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState<'ALL' | 'MANAGER' | 'AGENT'>('ALL');
 
   // Keep selectedAgent in sync with the users prop if it's updated externally
   useEffect(() => {
@@ -48,9 +50,23 @@ const AgentManagement: React.FC<AgentManagementProps> = ({ users, currentUser, t
     const augmentCount = completedTasks.filter(t => t.type === TaskType.AUGMENTING).length;
     const qaCount = completedTasks.filter(t => t.type === TaskType.QA).length;
     const activeTasksCount = userTasks.filter(t => t.status !== TaskStatus.DONE).length;
-    
+
     return { augmentCount, qaCount, activeTasksCount, total: userTasks.length };
   };
+
+  const maxAgentLoad = useMemo(() => {
+    const loads = users.filter(u => u.role === UserRole.AGENT).map(u => calculateMetrics(u.id).activeTasksCount);
+    return Math.max(1, ...loads);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [users, tasks]);
+
+  const filteredUsers = useMemo(() => {
+    return users.filter(u => {
+      if (roleFilter !== 'ALL' && u.role !== roleFilter) return false;
+      if (searchQuery.trim() && !u.name.toLowerCase().includes(searchQuery.trim().toLowerCase())) return false;
+      return true;
+    });
+  }, [users, roleFilter, searchQuery]);
 
   const handleSave = () => {
     if (isAddingNew) {
@@ -108,88 +124,103 @@ const AgentManagement: React.FC<AgentManagementProps> = ({ users, currentUser, t
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      <div className="flex justify-between items-center mb-6 flex-shrink-0">
+      <div className="flex justify-between items-end mb-4 flex-shrink-0">
         <div>
-           <h2 className="text-2xl font-bold text-slate-900 tracking-tight">DQA Agent</h2>
-           <p className="text-slate-500 text-sm mt-0.5">Manage team profiles, rates, and workloads.</p>
+           <h2 className="text-[21px] font-bold text-ink tracking-tight">DQA Agents</h2>
+           <p className="text-xs text-ink-muted mt-0.5">Manage team profiles, rates, and workloads</p>
         </div>
-        <Button onClick={() => { 
+        <Button onClick={() => {
           setIsAddingNew(true);
           setIsEditing(true);
-          setSelectedAgent({} as User); 
-        }} className="shadow-lg shadow-blue-500/20 px-5 py-2 text-sm">
+          setSelectedAgent({} as User);
+        }} className="text-[12px]">
             + Add New Agent
         </Button>
       </div>
 
+      <div className="flex justify-between items-center mb-4 flex-shrink-0">
+        <input
+          type="text"
+          placeholder="Search agents…"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          className="w-[220px] h-8 rounded-lg bg-surface border border-slate-200 px-3 text-[11.5px] text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-accent"
+        />
+        <PillSegmentedControl
+          value={roleFilter}
+          onChange={v => setRoleFilter(v as 'ALL' | 'MANAGER' | 'AGENT')}
+          options={[{ value: 'ALL', label: 'All' }, { value: 'MANAGER', label: 'Managers' }, { value: 'AGENT', label: 'Agents' }]}
+        />
+      </div>
+
       {/* Grid of Agent Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 overflow-y-auto pb-6 pr-2 custom-scrollbar flex-1">
-        {users.map(user => {
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 overflow-y-auto pb-6 pr-2 custom-scrollbar flex-1 content-start">
+        {filteredUsers.map(user => {
             const metrics = calculateMetrics(user.id);
-            const isMe = user.id === currentUser.id;
+            const isAgent = user.role === UserRole.AGENT;
             return (
-                <div 
-                    key={user.id} 
-                    className="bg-white rounded-xl border border-blue-400/20 shadow-sm flex flex-col overflow-hidden transition-all hover:shadow-md cursor-pointer h-fit"
+                <div
+                    key={user.id}
+                    className="bg-surface rounded-card shadow-sm flex flex-col overflow-hidden transition-all hover:shadow-md cursor-pointer"
                     onClick={() => handleCardClick(user)}
                 >
-                    <div className="pt-6 pb-4 flex flex-col items-center border-b border-slate-50 relative">
-                        <div className="relative mb-3">
+                    <div className="pt-5 pb-3.5 flex flex-col items-center border-b border-slate-50">
+                        <div className="relative mb-2.5">
                             {user.avatar ? (
-                                <img src={user.avatar} className="w-14 h-14 rounded-full border-2 border-white shadow-sm object-cover" />
+                                <img src={user.avatar} className="rounded-full object-cover" style={{ width: 52, height: 52 }} />
                             ) : (
-                                <div className="w-14 h-14 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-xl font-bold border-2 border-white shadow-sm">
+                                <div className="rounded-full bg-blue-50 text-[#3d5fbf] flex items-center justify-center font-bold" style={{ width: 52, height: 52, fontSize: 19 }}>
                                     {user.name?.charAt(0) || '?'}
                                 </div>
                             )}
-                            {isMe && (
-                                <div className="absolute -top-0.5 -right-0.5 bg-blue-500 text-white text-[8px] font-black px-1 py-0.5 rounded-md border border-white shadow-sm">
-                                    YOU
-                                </div>
+                            {isAgent && (
+                                <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${metrics.activeTasksCount > 0 ? 'bg-success' : 'bg-[#c9d2e6]'}`} />
                             )}
                         </div>
-                        <h3 className="font-bold text-slate-900 text-sm mb-1">{user.name}</h3>
-                        <div className={`text-[9px] font-black px-3 py-0.5 rounded-full uppercase tracking-widest ${
-                          user.role === UserRole.MANAGER 
-                            ? 'bg-amber-100 text-amber-700 border border-amber-200' 
-                            : 'bg-blue-50 text-blue-600 border border-blue-100'
+                        <h3 className="text-[13.5px] font-bold text-ink">{user.name}</h3>
+                        <div className={`text-[9px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wide mt-1.5 ${
+                          user.role === UserRole.MANAGER
+                            ? 'bg-warning-bg text-warning-text'
+                            : 'bg-blue-50 text-[#3d5fbf]'
                         }`}>
                            {user.role}
                         </div>
                     </div>
-                    
-                    <div className="p-4 flex-1 space-y-2">
-                        <div className="flex items-center gap-2 text-slate-500">
-                           <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                           <span className="text-[11px] font-medium truncate">{user.country || 'N/A'}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-slate-500">
-                           <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                           <span className="text-[11px] font-medium truncate">{user.joiningDate || 'N/A'}</span>
-                        </div>
 
-                        <div className="grid grid-cols-2 gap-2 mt-4">
-                            <div className="bg-[#F8FAFC] rounded-lg p-2 text-center border border-slate-50">
-                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Rate</p>
-                                <p className="text-xs font-black text-slate-900">${user.payRate || 0}</p>
+                    <div className="p-4">
+                        <div className="text-[11px] text-ink-secondary mb-1">🌐 {user.country || 'N/A'}</div>
+                        <div className="text-[11px] text-ink-muted mb-2.5">Joined {user.joiningDate || 'N/A'}</div>
+
+                        {isAgent && (
+                          <div className="mb-2.5">
+                            <div className="text-[9px] font-bold text-ink-muted uppercase tracking-wide mb-1">Active Load</div>
+                            <div className="h-[6px] bg-slate-100 rounded-full overflow-hidden">
+                              <div className="h-full bg-accent rounded-full" style={{ width: `${Math.min((metrics.activeTasksCount / maxAgentLoad) * 100, 100)}%` }} />
                             </div>
-                            <div className="bg-[#F8FAFC] rounded-lg p-2 text-center border border-slate-50">
-                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Load</p>
-                                <p className="text-xs font-black text-slate-900">{metrics.activeTasksCount}</p>
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-2">
+                            <div className="bg-slate-50 rounded-lg p-1.5 text-center">
+                                <p className="text-[9px] font-bold text-ink-muted uppercase">Rate</p>
+                                <p className="text-xs font-extrabold text-ink">${user.payRate || 0}{isAgent ? '/hr' : ''}</p>
+                            </div>
+                            <div className="bg-slate-50 rounded-lg p-1.5 text-center">
+                                <p className="text-[9px] font-bold text-ink-muted uppercase">{isAgent ? 'Active' : 'Load'}</p>
+                                <p className="text-xs font-extrabold text-ink">{isAgent ? metrics.activeTasksCount : '—'}</p>
                             </div>
                         </div>
-                    </div>
-
-                    <div className="px-4 pb-4 pt-1">
-                        <button 
-                          className="w-full py-2 text-[10px] font-bold text-[#475569] uppercase tracking-[0.1em] border border-blue-400/10 rounded-lg hover:bg-blue-50 hover:border-blue-400/30 transition-all"
-                        >
-                            EDIT PROFILE
-                        </button>
                     </div>
                 </div>
             );
         })}
+
+        <button
+          onClick={() => { setIsAddingNew(true); setIsEditing(true); setSelectedAgent({} as User); }}
+          className="border-2 border-dashed border-slate-300 rounded-card flex flex-col items-center justify-center gap-1.5 text-ink-muted text-xs font-semibold hover:border-accent hover:text-accent transition-colors min-h-[180px]"
+        >
+          <span className="text-2xl">+</span>Add New Agent
+        </button>
       </div>
 
       {/* AGENT DETAIL MODAL */}
