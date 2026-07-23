@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { InventoryFile, InventoryItem, InventoryStatus, UserRole, User, Task, TaskPriority, TaskType, TaskStatus } from '../types';
-import { Button, Card, Badge } from './Common';
+import { Button, Card, StatusDot, FlowBar } from './Common';
 import { generateId } from '../services/id';
 
 interface InventoryManagerProps {
@@ -33,7 +33,8 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ inventories, curren
   
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
-  
+  const [searchQuery, setSearchQuery] = useState('');
+
   // --- Google Sheets Style Filtering State ---
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
   const [columnFilters, setColumnFilters] = useState<Record<string, Set<string>>>({});
@@ -76,14 +77,27 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ inventories, curren
       document.removeEventListener('mouseup', handleMouseUp);
   };
 
+  // Permission-scoped only (no column filters/search) - feeds the Workflow
+  // Progress bar, which should reflect the whole file, not the current filter.
+  const scopedData = useMemo(() => {
+    if (!activeInventory) return [];
+    if (isManager) return activeInventory.data;
+    return activeInventory.data.filter(item => item.assigneeId === currentUser.id);
+  }, [activeInventory, isManager, currentUser.id]);
+
   // --- FILTER & SORT LOGIC ---
   const filteredData = useMemo(() => {
-    if (!activeInventory) return [];
-    let data = activeInventory.data;
+    let data = scopedData;
 
-    // 1. Permission Check
-    if (!isManager) {
-        data = data.filter(item => item.assigneeId === currentUser.id);
+    // 1. Apply free-text search
+    if (searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase();
+        data = data.filter(item =>
+            item.productId.toLowerCase().includes(q) ||
+            item.productName.toLowerCase().includes(q) ||
+            item.mfr.toLowerCase().includes(q) ||
+            item.model.toLowerCase().includes(q)
+        );
     }
 
     // 2. Apply Column Filters
@@ -119,7 +133,14 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ inventories, curren
     }
 
     return data;
-  }, [activeInventory, columnFilters, sortConfig, isManager, currentUser.id]);
+  }, [scopedData, searchQuery, columnFilters, sortConfig]);
+
+  const workflowCounts = useMemo(() => ({
+    pending: scopedData.filter(i => i.status === InventoryStatus.PENDING).length,
+    assigned: scopedData.filter(i => i.status === InventoryStatus.ASSIGNED_AUGMENTATION || i.status === InventoryStatus.ASSIGNED_QA).length,
+    augmented: scopedData.filter(i => i.status === InventoryStatus.AUGMENTED).length,
+    qaComplete: scopedData.filter(i => i.status === InventoryStatus.QA_COMPLETE).length,
+  }), [scopedData]);
 
   useEffect(() => {
     if (!activeFileId && inventories.length > 0) {
@@ -369,18 +390,11 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ inventories, curren
     setIsAssignModalOpen(true);
   };
 
+  // Status now reads via a StatusDot in the Workflow column plus the
+  // Workflow Progress bar above the table, not a solid row tint.
   const getRowClass = (item: InventoryItem, isSelected: boolean) => {
-    if (isSelected) return 'bg-blue-100 ring-1 ring-blue-400';
-    switch (item.status) {
-      case InventoryStatus.QA_COMPLETE: 
-        return 'bg-emerald-50 hover:bg-emerald-100';
-      case InventoryStatus.ASSIGNED_AUGMENTATION:
-      case InventoryStatus.ASSIGNED_QA:
-      case InventoryStatus.AUGMENTED: 
-        return 'bg-slate-100 text-slate-500 hover:bg-slate-200 opacity-80';
-      default: 
-        return 'hover:bg-slate-50';
-    }
+    if (isSelected) return 'bg-[#eaeffb]';
+    return 'hover:bg-slate-50';
   };
 
   return (
@@ -396,56 +410,94 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ inventories, curren
       )}
 
       {/* Header */}
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-slate-800">Inventory Workflow</h2>
-        {isManager && (
-          <Button onClick={() => fileInputRef.current?.click()} variant="secondary">
-             + Add Studio File
-          </Button>
-        )}
+      <div className="flex justify-between items-end">
+        <div>
+          <h2 className="text-[21px] font-bold text-ink tracking-tight">Inventory Data</h2>
+          <p className="text-xs text-ink-muted mt-0.5">
+            {inventories.reduce((sum, i) => sum + i.rowCount, 0)} rows across {inventories.length} studio file{inventories.length === 1 ? '' : 's'}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {isManager && activeInventory && (
+            <button onClick={() => onDeleteFile(activeInventory.id)} className="px-3.5 py-2 text-[11.5px] font-semibold rounded-lg bg-surface text-danger-text hover:bg-danger-bg transition-colors border border-slate-200">
+              Delete File
+            </button>
+          )}
+          {isManager && (
+            <button onClick={() => fileInputRef.current?.click()} className="px-3.5 py-2 text-[11.5px] font-semibold rounded-lg bg-surface text-ink-secondary hover:bg-slate-50 transition-colors border border-slate-200">
+              + Add Studio File
+            </button>
+          )}
+        </div>
         <input type="file" accept=".csv, .xlsx, .xls" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
       </div>
 
       {/* File Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 overflow-x-auto">
+      <div className="flex items-center gap-2">
         {inventories.map(inv => (
-          <button key={inv.id} onClick={() => setActiveFileId(inv.id)} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeFileId === inv.id ? 'text-blue-600 border-blue-600' : 'text-slate-500 border-transparent hover:text-slate-700'}`}>
-             {inv.fileName}
+          <button
+            key={inv.id}
+            onClick={() => setActiveFileId(inv.id)}
+            className={`px-3.5 py-2 rounded-t-lg text-[12.5px] font-semibold transition-colors ${
+              activeFileId === inv.id ? 'bg-accent text-white' : 'text-ink-secondary hover:bg-slate-100'
+            }`}
+          >
+             {inv.fileName} <span className={activeFileId === inv.id ? 'opacity-70 font-medium' : 'text-ink-muted font-medium'}>· {inv.rowCount}</span>
           </button>
         ))}
       </div>
 
       {activeInventory ? (
-        <div className="flex-1 flex flex-col min-h-0 gap-4">
-          <Card className="p-4 flex flex-col md:flex-row gap-4 items-center justify-between">
-             <div className="flex-1">
-                <div className="text-sm text-slate-600">
-                    Showing <span className="font-bold">{filteredData.length}</span> of {activeInventory.data.length} items
+        <div className="flex-1 flex flex-col min-h-0 gap-3">
+          <div className="bg-surface rounded-card p-3.5 shadow-sm">
+            <div className="flex justify-between items-center mb-2">
+              <div className="text-[11px] font-bold text-ink-muted uppercase tracking-wide">Workflow Progress · {activeInventory.fileName}</div>
+              <div className="text-[11px] text-ink-muted">{scopedData.length} items</div>
+            </div>
+            <FlowBar
+              height={16}
+              segments={[
+                { label: 'Pending', count: workflowCounts.pending, colorClass: 'bg-[#dde1ea]' },
+                { label: 'Assigned', count: workflowCounts.assigned, colorClass: 'bg-[#c9d2e6]' },
+                { label: 'Augmented', count: workflowCounts.augmented, colorClass: 'bg-accent' },
+                { label: 'QA Complete', count: workflowCounts.qaComplete, colorClass: 'bg-success' },
+              ]}
+            />
+          </div>
+
+          <div className="flex justify-between items-center gap-3">
+             <div className="flex items-center gap-3">
+                <input
+                  type="text"
+                  placeholder="Search this file…"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-[220px] h-8 rounded-lg bg-surface border border-slate-200 px-3 text-[11.5px] text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-accent"
+                />
+                <div className="text-[11.5px] text-ink-muted">
+                    Showing <span className="font-bold text-ink-secondary">{filteredData.length}</span> of {scopedData.length}
                     {Object.keys(columnFilters).length > 0 && (
-                        <button onClick={() => setColumnFilters({})} className="ml-4 text-xs text-red-500 hover:underline">Clear all filters</button>
+                        <button onClick={() => setColumnFilters({})} className="ml-3 text-danger-text hover:underline">Clear column filters</button>
                     )}
                 </div>
              </div>
-             <div className="flex items-center gap-2">
-               {selectedIds.size > 0 && (
-                 <>
-                   {isManager ? (
-                     <>
-                        <Button variant="secondary" onClick={() => openAssignModal('AUGMENTATION')}>Assign Augmentation</Button>
-                        <Button variant="secondary" onClick={() => openAssignModal('QA')}>Assign QA</Button>
-                     </>
-                   ) : (
-                     <>
-                        <Button variant="primary" onClick={() => handleAgentStatusUpdate(InventoryStatus.AUGMENTED)}>Mark Augmented</Button>
-                        <Button variant="primary" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => handleAgentStatusUpdate(InventoryStatus.QA_COMPLETE)}>Mark QA'd</Button>
-                     </>
-                   )}
-                   <span className="text-xs font-bold text-slate-500">{selectedIds.size} selected</span>
-                 </>
-               )}
-               {isManager && <Button variant="danger" onClick={() => onDeleteFile(activeInventory.id)}>Delete</Button>}
-             </div>
-          </Card>
+             {selectedIds.size > 0 && (
+               <div className="flex items-center gap-2 bg-[#eaeffb] border border-[#cddcfc] rounded-lg pl-3 pr-1.5 py-1.5">
+                 <span className="text-[11.5px] font-bold text-[#2c4a91]">{selectedIds.size} selected</span>
+                 {isManager ? (
+                   <>
+                      <Button variant="secondary" className="text-[11px] py-1.5 px-2.5" onClick={() => openAssignModal('AUGMENTATION')}>Assign Augmentation</Button>
+                      <Button variant="secondary" className="text-[11px] py-1.5 px-2.5" onClick={() => openAssignModal('QA')}>Assign QA</Button>
+                   </>
+                 ) : (
+                   <>
+                      <Button variant="primary" className="text-[11px] py-1.5 px-2.5" onClick={() => handleAgentStatusUpdate(InventoryStatus.AUGMENTED)}>Mark Augmented</Button>
+                      <Button variant="primary" className="text-[11px] py-1.5 px-2.5 bg-success hover:bg-emerald-600" onClick={() => handleAgentStatusUpdate(InventoryStatus.QA_COMPLETE)}>Mark QA'd</Button>
+                   </>
+                 )}
+               </div>
+             )}
+          </div>
 
           <Card className="flex-1 overflow-hidden relative">
             <div className="overflow-auto h-full pb-20">
@@ -528,9 +580,15 @@ const InventoryManager: React.FC<InventoryManagerProps> = ({ inventories, curren
                                         <svg className="w-3 h-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                                     </a>
                                 ) : col.key === 'status' ? (
-                                    <Badge color={item.status === InventoryStatus.QA_COMPLETE ? 'green' : item.status === InventoryStatus.AUGMENTED ? 'blue' : 'yellow'}>
-                                        {item.status.replace(/_/g, ' ')}
-                                    </Badge>
+                                    <StatusDot
+                                        colorClass={
+                                            item.status === InventoryStatus.QA_COMPLETE ? 'bg-success' :
+                                            item.status === InventoryStatus.AUGMENTED ? 'bg-accent' :
+                                            item.status === InventoryStatus.ASSIGNED_AUGMENTATION || item.status === InventoryStatus.ASSIGNED_QA ? 'bg-[#c9d2e6]' :
+                                            'bg-[#dde1ea]'
+                                        }
+                                        label={item.status.replace(/_/g, ' ')}
+                                    />
                                 ) : (
                                     <span className={item[col.key] ? "text-slate-600" : "text-slate-300 italic"}>
                                         {item[col.key] || '-'}
