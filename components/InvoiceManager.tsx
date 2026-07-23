@@ -1,9 +1,42 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { Invoice, User, UserRole, InvoiceFileMeta } from '../types';
-import { Button, Card, Badge } from './Common';
+import { Button, Badge, StatCard, FlowBar } from './Common';
 import { generateId } from '../services/id';
 import { storageService } from '../services/storageService';
+
+const STAGE_LABELS = ['Created', 'Assigned', 'Processed', 'Uploaded'];
+
+// Maps invoice status to how many of the 4 stages are "reached" and what
+// color the reached stages should render in.
+const stepperInfo = (status: Invoice['status']) => {
+  switch (status) {
+    case 'PENDING': return { filled: 1, colorClass: 'bg-slate-400' };
+    case 'ASSIGNED': return { filled: 2, colorClass: 'bg-accent' };
+    case 'COMPLETED': return { filled: 3, colorClass: 'bg-success' };
+    case 'UPLOADED': return { filled: 4, colorClass: 'bg-success' };
+    default: return { filled: 1, colorClass: 'bg-slate-400' };
+  }
+};
+
+const statusLabel = (status: Invoice['status']) => {
+  switch (status) {
+    case 'PENDING': return 'Pending';
+    case 'ASSIGNED': return 'Assigned';
+    case 'COMPLETED': return 'Ready for Upload';
+    case 'UPLOADED': return 'Uploaded';
+    default: return status;
+  }
+};
+
+const statusTextClass = (status: Invoice['status']) => {
+  switch (status) {
+    case 'ASSIGNED': return 'text-[#3d5fbf]';
+    case 'COMPLETED':
+    case 'UPLOADED': return 'text-success-text';
+    default: return 'text-ink-muted';
+  }
+};
 
 interface InvoiceManagerProps {
   invoices: Invoice[];
@@ -108,44 +141,55 @@ const InvoiceCard: React.FC<{
   invoice: Invoice;
   onClick: () => void;
 }> = ({ invoice, onClick }) => {
+  const { filled, colorClass } = stepperInfo(invoice.status);
+  const isOverdue = invoice.dueDate && invoice.status !== 'COMPLETED' && invoice.status !== 'UPLOADED' && new Date(invoice.dueDate) < new Date();
+
   return (
-    <Card 
-      className={`p-5 flex flex-col relative overflow-hidden cursor-pointer transition-all duration-200 hover:shadow-md hover:-translate-y-1 ${invoice.status === 'UPLOADED' ? 'bg-green-50/50 opacity-90' : invoice.status === 'COMPLETED' ? 'bg-indigo-50/20' : ''}`}
+    <div
+      className="bg-surface rounded-card p-4 shadow-sm cursor-pointer transition-all hover:shadow-md"
       onClick={onClick}
     >
-      {/* Status Strip */}
-      <div className={`absolute top-0 left-0 w-1.5 h-full ${
-        invoice.status === 'UPLOADED' ? 'bg-purple-600' :
-        invoice.status === 'COMPLETED' ? 'bg-green-500' : 
-        invoice.status === 'ASSIGNED' ? 'bg-blue-500' : 'bg-slate-300'
-      }`}></div>
-      
-      <div className="pl-3">
-        <div className="flex justify-between items-start mb-2">
-           <h3 className="font-bold text-slate-800 text-lg">{invoice.referenceName}</h3>
-           <Badge color={
-              invoice.status === 'UPLOADED' ? 'blue' : 
-              invoice.status === 'COMPLETED' ? 'green' : 
-              invoice.status === 'ASSIGNED' ? 'blue' : 'gray'
-           }>
-             {invoice.status}
-           </Badge>
-        </div>
-        <p className="text-xs text-slate-400 mt-1">Created: {new Date(invoice.createdAt).toLocaleDateString()}</p>
-        {invoice.dueDate && (
-           <p className="text-xs text-red-500 mt-1 font-medium">Due: {new Date(invoice.dueDate).toLocaleDateString()}</p>
-        )}
-        
+      <div className="flex justify-between items-start mb-2.5">
+        <h3 className="text-[14px] font-bold text-ink">{invoice.referenceName}</h3>
         {invoice.isPreProcessed && (
-           <div className="mt-3">
-             <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-purple-100 text-purple-700 text-xs font-bold border border-purple-200">
-               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-               Pre-processed
-             </span>
-           </div>
+          <span className="text-[9px] font-extrabold text-purple bg-purple-bg px-1.5 py-0.5 rounded tracking-wide flex-shrink-0">PRE-PROCESSED</span>
         )}
       </div>
-    </Card>
+
+      <FlowBar
+        height={6}
+        showLegend={false}
+        segments={STAGE_LABELS.map((label, i) => ({ label, count: 1, colorClass: i < filled ? colorClass : 'bg-[#eceef2]' }))}
+      />
+      <div className={`text-[10.5px] font-bold uppercase tracking-wide mt-1.5 ${statusTextClass(invoice.status)}`}>
+        {statusLabel(invoice.status)}
+      </div>
+
+      <div className="mt-2.5">
+        {invoice.status === 'PENDING' && (
+          <p className="text-[11px] text-ink-muted">Created {new Date(invoice.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · Unassigned</p>
+        )}
+        {invoice.status === 'ASSIGNED' && (
+          <div className="flex items-center gap-1.5">
+            <div className="w-[18px] h-[18px] rounded-full bg-blue-50 text-[#3d5fbf] text-[9px] font-bold flex items-center justify-center flex-shrink-0">
+              {invoice.assigneeName?.charAt(0)}
+            </div>
+            <span className="text-[11px] text-ink-secondary">{invoice.assigneeName}</span>
+            {invoice.dueDate && (
+              <span className={`text-[11px] font-semibold ml-auto ${isOverdue ? 'text-danger-text' : 'text-ink-muted'}`}>
+                Due {new Date(invoice.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+              </span>
+            )}
+          </div>
+        )}
+        {invoice.status === 'COMPLETED' && (
+          <p className="text-[11px] font-semibold text-success-text">Processed by {invoice.assigneeName} · Confirm →</p>
+        )}
+        {invoice.status === 'UPLOADED' && (
+          <p className="text-[11px] text-ink-muted">Confirmed {invoice.completedAt ? new Date(invoice.completedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''}</p>
+        )}
+      </div>
+    </div>
   );
 };
 
@@ -351,6 +395,21 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ invoices, currentUser, 
 
   const [showHistory, setShowHistory] = useState(false);
 
+  const myInvoices = useMemo(
+    () => invoices.filter(inv => isManager || inv.assigneeId === currentUser.id),
+    [invoices, isManager, currentUser.id]
+  );
+  const stats = useMemo(() => {
+    const THIRTY_DAYS_MS = 30 * 86400000;
+    const now = Date.now();
+    return {
+      pending: myInvoices.filter(i => i.status === 'PENDING').length,
+      assigned: myInvoices.filter(i => i.status === 'ASSIGNED').length,
+      awaitingUpload: myInvoices.filter(i => i.status === 'COMPLETED').length,
+      uploaded30d: myInvoices.filter(i => i.status === 'UPLOADED' && i.completedAt && now - i.completedAt <= THIRTY_DAYS_MS).length,
+    };
+  }, [myInvoices]);
+
   const handleCreateInvoice = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pdfFile || !newRefName) return;
@@ -539,23 +598,30 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ invoices, currentUser, 
         </div>
       )}
 
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-end mb-4">
         <div>
-           <h2 className="text-2xl font-bold text-slate-800">Studio Invoices</h2>
-           <p className="text-slate-500 text-sm">Upload, assign, and process invoice documents.</p>
+           <h2 className="text-[21px] font-bold text-ink tracking-tight">Studio Invoices</h2>
+           <p className="text-xs text-ink-muted mt-0.5">Upload, assign, and process invoice documents</p>
         </div>
         {isManager && (
-          <Button onClick={() => setIsModalOpen(true)}>
+          <Button onClick={() => setIsModalOpen(true)} className="text-[12px]">
             + New Invoice Slot
           </Button>
         )}
       </div>
 
-      <div className="grid gap-6 overflow-y-auto pb-6" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+        <StatCard label="Pending" value={stats.pending} />
+        <StatCard label="Assigned" value={stats.assigned} />
+        <StatCard label="Awaiting Upload" value={stats.awaitingUpload} />
+        <StatCard label="Uploaded (30d)" value={stats.uploaded30d} />
+      </div>
+
+      <div className="grid gap-4 overflow-y-auto pb-6" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
         {visibleInvoices.length === 0 && historicalInvoices.length === 0 && (
-          <div className="col-span-full text-center py-12 bg-white rounded-xl border border-dashed border-slate-300">
-             <div className="text-slate-400 mb-2">No invoices found.</div>
-             {isManager && <p className="text-sm text-blue-500 cursor-pointer hover:underline" onClick={() => setIsModalOpen(true)}>Create the first slot</p>}
+          <div className="col-span-full text-center py-12 bg-surface rounded-card border border-dashed border-slate-300">
+             <div className="text-ink-muted mb-2">No invoices found.</div>
+             {isManager && <p className="text-sm text-accent cursor-pointer hover:underline" onClick={() => setIsModalOpen(true)}>Create the first slot</p>}
           </div>
         )}
 
