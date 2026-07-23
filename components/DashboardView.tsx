@@ -45,34 +45,53 @@ const DashboardView: React.FC<DashboardViewProps> = ({
     }
   }, [escalations, activeEscalation]);
 
-  const now = Date.now();
+  // Frozen for the component's mounted lifetime rather than recomputed every
+  // render - Date.now() as a plain const was invalidating every useMemo
+  // that depended on it (e.g. completedThisWeek) on every render, not just
+  // when tasks actually changed.
+  const now = useMemo(() => Date.now(), []);
   const startOfToday = useMemo(() => new Date(new Date().setHours(0, 0, 0, 0)).getTime(), []);
 
+  // "Delete" on Task Board doesn't remove a task from the DB, it sets
+  // hiddenFromBoard - the same soft-hide Task Board itself already filters
+  // on. Every stat/list below needs the same filter, or deleted tasks keep
+  // counting here even though they're gone everywhere else.
+  const visibleTasks = useMemo(() => tasks.filter(t => !t.hiddenFromBoard), [tasks]);
+
   const statusCounts = useMemo(() => ({
-    todo: tasks.filter(t => t.status === TaskStatus.TODO).length,
-    inProgress: tasks.filter(t => t.status === TaskStatus.IN_PROGRESS).length,
-    onHold: tasks.filter(t => t.status === TaskStatus.ON_HOLD).length,
-    done: tasks.filter(t => t.status === TaskStatus.DONE).length,
-  }), [tasks]);
+    todo: visibleTasks.filter(t => t.status === TaskStatus.TODO).length,
+    inProgress: visibleTasks.filter(t => t.status === TaskStatus.IN_PROGRESS).length,
+    onHold: visibleTasks.filter(t => t.status === TaskStatus.ON_HOLD).length,
+    done: visibleTasks.filter(t => t.status === TaskStatus.DONE).length,
+  }), [visibleTasks]);
 
-  const openTasksToday = useMemo(() => tasks.filter(t => t.createdAt >= startOfToday).length, [tasks, startOfToday]);
+  const openTasksToday = useMemo(() => visibleTasks.filter(t => t.createdAt >= startOfToday).length, [visibleTasks, startOfToday]);
 
-  const activeEscalations = useMemo(() => escalations.filter(e => e.status !== 'CLOSED'), [escalations]);
+  // Also excludes escalations attached to a since-deleted task - otherwise
+  // an orphaned escalation for a task that's gone keeps showing up here too.
+  const activeEscalations = useMemo(
+    () => escalations.filter(e => {
+      if (e.status === 'CLOSED') return false;
+      const task = tasks.find(t => t.id === e.taskId);
+      return !task || !task.hiddenFromBoard;
+    }),
+    [escalations, tasks]
+  );
   const escalatedTaskIds = useMemo(() => new Set(activeEscalations.map(e => e.taskId)), [activeEscalations]);
 
   const onHoldTasks = useMemo(
-    () => tasks.filter(t => t.status === TaskStatus.ON_HOLD && !escalatedTaskIds.has(t.id)),
-    [tasks, escalatedTaskIds]
+    () => visibleTasks.filter(t => t.status === TaskStatus.ON_HOLD && !escalatedTaskIds.has(t.id)),
+    [visibleTasks, escalatedTaskIds]
   );
 
   const overdueTasks = useMemo(
-    () => tasks.filter(t =>
+    () => visibleTasks.filter(t =>
       t.status !== TaskStatus.DONE &&
       t.status !== TaskStatus.ON_HOLD &&
       !escalatedTaskIds.has(t.id) &&
       t.dueDate && new Date(t.dueDate).getTime() < startOfToday
     ).sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()), // most overdue first
-    [tasks, escalatedTaskIds, startOfToday]
+    [visibleTasks, escalatedTaskIds, startOfToday]
   );
 
   const needsAttentionCount = activeEscalations.length + onHoldTasks.length + overdueTasks.length;
@@ -95,30 +114,30 @@ const DashboardView: React.FC<DashboardViewProps> = ({
   const hiddenNeedsAttentionCount = needsAttentionItems.length - visibleNeedsAttention.length;
 
   const completedThisWeek = useMemo(
-    () => tasks.filter(t => t.status === TaskStatus.DONE && t.completedAt && t.completedAt >= now - 7 * DAY_MS).length,
-    [tasks, now]
+    () => visibleTasks.filter(t => t.status === TaskStatus.DONE && t.completedAt && t.completedAt >= now - 7 * DAY_MS).length,
+    [visibleTasks, now]
   );
   const completedPrevWeek = useMemo(
-    () => tasks.filter(t => t.status === TaskStatus.DONE && t.completedAt && t.completedAt >= now - 14 * DAY_MS && t.completedAt < now - 7 * DAY_MS).length,
-    [tasks, now]
+    () => visibleTasks.filter(t => t.status === TaskStatus.DONE && t.completedAt && t.completedAt >= now - 14 * DAY_MS && t.completedAt < now - 7 * DAY_MS).length,
+    [visibleTasks, now]
   );
   const completedDeltaPct = completedPrevWeek > 0 ? Math.round(((completedThisWeek - completedPrevWeek) / completedPrevWeek) * 100) : null;
 
   const turnaround = useMemo(() => {
-    const doneWithTimes = tasks.filter(t => t.status === TaskStatus.DONE && t.completedAt);
+    const doneWithTimes = visibleTasks.filter(t => t.status === TaskStatus.DONE && t.completedAt);
     if (doneWithTimes.length === 0) return { avgHours: 0, agentCount: 0 };
     const totalHours = doneWithTimes.reduce((sum, t) => sum + (t.completedAt! - t.createdAt) / 3600000, 0);
     const agentIds = new Set(doneWithTimes.flatMap(t => t.assigneeIds));
     return { avgHours: totalHours / doneWithTimes.length, agentCount: agentIds.size };
-  }, [tasks]);
+  }, [visibleTasks]);
 
   const dueTodayTasks = useMemo(
-    () => tasks.filter(t => {
+    () => visibleTasks.filter(t => {
       if (t.status === TaskStatus.DONE || !t.dueDate) return false;
       const d = new Date(t.dueDate).getTime();
       return d >= startOfToday && d < startOfToday + DAY_MS;
     }).sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
-    [tasks, startOfToday]
+    [visibleTasks, startOfToday]
   );
 
   const pendingLeaves = useMemo(() => leaveRequests.filter(r => r.status === 'PENDING'), [leaveRequests]);

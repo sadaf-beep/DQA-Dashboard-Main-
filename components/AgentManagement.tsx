@@ -45,7 +45,10 @@ const AgentManagement: React.FC<AgentManagementProps> = ({ users, currentUser, t
   }, [selectedAgent, isAddingNew]);
 
   const calculateMetrics = (userId: string) => {
-    const userTasks = tasks.filter(t => t.assigneeIds.includes(userId));
+    // "Delete" on Task Board just sets hiddenFromBoard rather than removing
+    // the task - exclude those or a deleted task keeps inflating this
+    // agent's load/completed counts forever.
+    const userTasks = tasks.filter(t => t.assigneeIds.includes(userId) && !t.hiddenFromBoard);
     const completedTasks = userTasks.filter(t => t.status === TaskStatus.DONE);
     const augmentCount = completedTasks.filter(t => t.type === TaskType.AUGMENTING).length;
     const qaCount = completedTasks.filter(t => t.type === TaskType.QA).length;
@@ -457,7 +460,7 @@ const AgentManagement: React.FC<AgentManagementProps> = ({ users, currentUser, t
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {selectedAgent.id && tasks.filter(t => t.assigneeIds.includes(selectedAgent.id)).map(task => (
+                                    {selectedAgent.id && tasks.filter(t => t.assigneeIds.includes(selectedAgent.id) && !t.hiddenFromBoard).map(task => (
                                       <tr key={task.id} className="border-b border-slate-50 hover:bg-slate-50/50">
                                          <td className="px-6 py-3">
                                             <p className="font-bold text-slate-900 text-xs">{task.title}</p>
@@ -471,7 +474,7 @@ const AgentManagement: React.FC<AgentManagementProps> = ({ users, currentUser, t
                                     ))}
                                 </tbody>
                             </table>
-                            {(!selectedAgent.id || tasks.filter(t => t.assigneeIds.includes(selectedAgent.id)).length === 0) && (
+                            {(!selectedAgent.id || tasks.filter(t => t.assigneeIds.includes(selectedAgent.id) && !t.hiddenFromBoard).length === 0) && (
                               <div className="flex flex-col items-center justify-center h-48 text-slate-300">
                                   <svg className="w-8 h-8 mb-2 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
                                   <p className="text-xs italic font-medium">No historical tasks found.</p>

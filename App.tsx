@@ -329,6 +329,7 @@ const App: React.FC = () => {
 
     tasks.forEach(task => {
       if (task.status === TaskStatus.DONE) return;
+      if (task.hiddenFromBoard) return;
       if (!task.inventoryFileId || !task.inventoryItemIds || task.inventoryItemIds.length === 0) return;
       
       const hasActiveEscalation = escalations.some(e => e.taskId === task.id && e.status !== 'CLOSED');
