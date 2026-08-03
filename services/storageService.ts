@@ -230,10 +230,16 @@ const setupChannelListeners = (channel: RealtimeChannel) => {
     });
 };
 
-// Keeps a local cache in sync with a table via realtime, applying each
-// change directly from the payload instead of re-fetching the whole table
-// on every insert/update/delete. `users` doesn't use this - see
-// subscribeUsers for why.
+// Keeps a local cache in sync with a table via realtime. On insert/update we
+// re-fetch just the changed row through PostgREST rather than trusting the
+// realtime payload directly - same reasoning as subscribeUsers below.
+// Postgres array/jsonb columns (e.g. tasks.tags, inventory_files.data) can
+// arrive over the realtime socket in raw wire format rather than the parsed
+// shape a normal select gives, which was silently corrupting mapped fields
+// (assigneeIds, hiddenFromBoard, inventory data) and crashing the render
+// with no ErrorBoundary to catch it - wiping the whole page until refresh.
+// A single fetch-by-id (indexed, cheap) is still far less than re-fetching
+// the whole table on every change.
 const subscribeCollection = <T extends { id: string }>(
   table: string,
   mapFromDB: (row: any) => T,
@@ -257,14 +263,25 @@ const subscribeCollection = <T extends { id: string }>(
         const deletedId = (payload.old as any)?.id;
         if (deletedId == null) return;
         cache = cache.filter(item => item.id !== deletedId);
-      } else {
-        const updated = mapFromDB(payload.new);
+        callback(cache);
+        return;
+      }
+
+      const changedId = (payload.new as any)?.id;
+      if (changedId == null) return;
+      supabase.from(table).select('*').eq('id', changedId).maybeSingle().then(({ data, error }) => {
+        if (error) {
+          console.error(`Supabase Error (${table} refetch):`, error);
+          return;
+        }
+        if (!data) return;
+        const updated = mapFromDB(data);
         const idx = cache.findIndex(item => item.id === updated.id);
         cache = idx >= 0
           ? [...cache.slice(0, idx), updated, ...cache.slice(idx + 1)]
           : [updated, ...cache];
-      }
-      callback(cache);
+        callback(cache);
+      });
     });
 
   setupChannelListeners(channel);
